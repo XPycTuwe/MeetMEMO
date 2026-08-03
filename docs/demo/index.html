@@ -1,0 +1,1528 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeetMemo — как это работает</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+
+    /* Палитра из логотипа: тёмно-синий круг, оранжевая волна */
+    --screen:    #0B1A2B;
+    --chrome:    #152840;
+    --surface:   #1C3049;
+    --line:      #27405C;
+    --ink:       #E9EFF6;
+    --muted:     #8FA6BE;
+    --brand:     #2E74B5;
+    --accent:    #F58220;
+    --rec:       #E53935;
+    --mic:       #7FD1A8;
+
+    --page:      #0E1C2B;
+    --page-ink:  #E9EFF6;
+    --page-muted:#8FA6BE;
+    --card:      #142639;
+    --card-line: #24384F;
+
+    --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "Cascadia Mono", Consolas, "SF Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --page: #EDF2F7; --page-ink: #10202F; --page-muted: #516B85;
+      --card: #FFFFFF; --card-line: #D8E2EC;
+    }
+  }
+  :root[data-theme="light"] {
+    --page: #EDF2F7; --page-ink: #10202F; --page-muted: #516B85;
+    --card: #FFFFFF; --card-line: #D8E2EC;
+  }
+  :root[data-theme="dark"] {
+    --page: #0E1C2B; --page-ink: #E9EFF6; --page-muted: #8FA6BE;
+    --card: #142639; --card-line: #24384F;
+  }
+
+  body {
+    margin: 0; background: var(--page); color: var(--page-ink);
+    font-family: var(--font-ui); line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1120px; margin: 0 auto;
+    padding: clamp(24px, 4vw, 52px) clamp(16px, 3vw, 32px) 60px;
+    display: flex; flex-direction: column; gap: 24px;
+  }
+
+  .eyebrow {
+    font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+  }
+  h1 {
+    margin: 6px 0 8px; font-size: clamp(1.7rem, 1.3rem + 1.8vw, 2.5rem);
+    font-weight: 650; letter-spacing: -0.02em; text-wrap: balance;
+  }
+  .lede { margin: 0; max-width: 64ch; color: var(--page-muted); }
+
+  /* ── Экран ─────────────────────────────────────────────── */
+  .stage-outer {
+    background: var(--screen); border: 1px solid var(--line);
+    border-radius: 14px; padding: 10px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.35); overflow: hidden;
+  }
+  .stage {
+    position: relative; width: 1000px; height: 600px;
+    transform-origin: top left;
+    background:
+      radial-gradient(120% 90% at 70% 0%, #1B3352 0%, transparent 60%),
+      linear-gradient(160deg, #14273D 0%, #0B1A2B 60%);
+    border-radius: 8px; overflow: hidden; font-size: 14px;
+    color: var(--ink);
+  }
+
+  .win {
+    position: absolute; border-radius: 8px; overflow: hidden;
+    box-shadow: 0 18px 44px rgba(0,0,0,.5);
+    opacity: 0; transform: scale(.98) translateY(6px);
+    transition: opacity .3s ease, transform .3s ease;
+    pointer-events: none;
+  }
+  .win.show { opacity: 1; transform: none; }
+
+  /* ── Окно встречи ──────────────────────────────────────── */
+  #meetWin { left: 46px; top: 40px; width: 660px; height: 430px;
+             background: #16405C; display: flex; flex-direction: column; }
+
+  .titlebar {
+    height: 34px; background: #0F3149; display: flex; align-items: center;
+    gap: 8px; padding: 0 6px 0 10px; color: #DCEAF3; font-size: 12.5px; flex: none;
+  }
+  .app-mark { width: 14px; height: 14px; border-radius: 3px;
+              background: linear-gradient(135deg, #7FB8E0, #3B7FB5); flex: none; }
+  .titlebar .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sys-btns { display: flex; gap: 2px; flex: none; }
+  .sys-btn { width: 28px; height: 24px; display: grid; place-items: center;
+             color: #B9D2E4; font-size: 11px; }
+
+  .mm-overlay { display: flex; align-items: center; gap: 5px; flex: none; margin-right: 6px; }
+  .mm-panel {
+    display: flex; align-items: center; gap: 4px;
+    background: rgba(12, 22, 36, .95); border-radius: 5px; padding: 3px 5px;
+    opacity: 0; transform: translateX(8px); white-space: nowrap;
+    transition: opacity .22s ease, transform .22s ease;
+  }
+  .mm-panel.open { opacity: 1; transform: none; }
+  .mm-time { font-family: var(--font-mono); font-size: 11.5px; color: #D6DEE8;
+             font-variant-numeric: tabular-nums; padding: 0 4px; }
+  .mm-btn { font-size: 11px; color: #fff; background: var(--brand);
+            border-radius: 3px; padding: 3px 8px; }
+  .mm-btn.stop { background: #B91C1C; }
+  .mm-btn.ghost { background: rgba(255,255,255,.14); }
+
+  .mm-shot {
+    width: 21px; height: 21px; border-radius: 4px; background: var(--brand);
+    display: none; place-items: center; flex: none; position: relative;
+  }
+  .mm-shot.on { display: grid; }
+  .mm-shot svg { width: 13px; height: 13px; }
+  /* Подсветка кнопки, о которой говорит подпись */
+  .mm-shot.hl::after, .mm-badge.hl::after {
+    content: ""; position: absolute; inset: -6px; border-radius: 9px;
+    border: 2px solid var(--accent); animation: hlPulse 1.1s ease-in-out infinite;
+  }
+  @keyframes hlPulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+
+  .mm-badge {
+    width: 19px; height: 19px; border-radius: 50%; position: relative;
+    border: 1.5px solid rgba(200,214,228,.75); background: rgba(255,255,255,.12);
+    display: grid; place-items: center; flex: none; transition: border-color .3s;
+  }
+  .mm-dot { width: 8px; height: 8px; border-radius: 50%; background: #9CA3AF;
+            transition: background .3s; }
+  .mm-badge.rec { border-color: rgba(229,57,53,.85); }
+  .mm-badge.rec .mm-dot { background: var(--rec); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+
+  .meeting-body {
+    flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+    gap: 8px; padding: 10px; background: #123954;
+  }
+  .tile { background: #0E2E44; border-radius: 6px; position: relative;
+          display: grid; place-items: center; }
+  .tile .av { width: 56px; height: 56px; border-radius: 50%;
+              background: linear-gradient(140deg, #4E90C4, #1E5B85);
+              display: grid; place-items: center; color: #EAF4FB;
+              font-size: 17px; font-weight: 600; }
+  .tile .who { position: absolute; left: 8px; bottom: 6px; font-size: 11px;
+               color: #CFE2EF; background: rgba(0,0,0,.34); padding: 2px 7px; border-radius: 4px; }
+  .tile.speaking { outline: 2px solid #7FE3B0; outline-offset: -2px; }
+  .tile.you { background: #10323B; }
+  .tile.you .av { background: linear-gradient(140deg, #52B98C, #1F7355); }
+  .tile.you.speaking { outline-color: var(--mic); }
+
+  .tile.slide { background: #F7F9FB; place-items: stretch; padding: 13px; }
+  .slide-h { font-size: 12.5px; font-weight: 650; color: #12283C; margin-bottom: 7px;
+             height: 15px; }
+  .slide-row { display: flex; justify-content: space-between; font-size: 11px;
+               color: #3C556E; padding: 3px 0; border-bottom: 1px solid #E3EAF1;
+               font-variant-numeric: tabular-nums; }
+  .slide-row b { color: #12283C; }
+  /* Столбчатая диаграмма на слайде: одна серия, поэтому легенда не нужна — её называет
+     заголовок. Подпись значения только у акцентного столбца, а не на каждом. */
+  .chart { display: flex; flex-direction: column; height: calc(100% - 22px); }
+  .bars { flex: 1; display: flex; align-items: flex-end; gap: 5px;
+          border-bottom: 1px solid #D5DEE7; padding-bottom: 1px; }
+  .bar { flex: 1; background: #9CC0DF; border-radius: 3px 3px 0 0; position: relative;
+         min-height: 3px; }
+  .bar.last { background: var(--brand); }
+  /* Подпись внутри столбца, а не над ним: самый высокий столбец занимает всю высоту,
+     и надпись сверху заезжала бы на заголовок слайда. */
+  .bar-val { position: absolute; top: 2px; left: 0; right: 0; text-align: center;
+             font-size: 9.5px; font-style: normal; color: #fff; font-weight: 650;
+             font-variant-numeric: tabular-nums; }
+  .axis { display: flex; gap: 5px; margin-top: 3px; }
+  .axis span { flex: 1; text-align: center; font-size: 8.5px; color: #7B90A5; }
+
+  .slide-2 { display: none; }
+  .slide.flip .slide-1 { display: none; }
+  /* Смену слайда нужно успеть заметить: без неё снимок выглядит беспричинным. */
+  .slide.flip .slide-2 { display: block; animation: slideIn .5s ease both; }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(16px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  .flash.go { animation: flash .5s ease; }
+  @keyframes flash { 0% { opacity: .75 } 100% { opacity: 0 } }
+
+  /* ── Страница GitHub ───────────────────────────────────── */
+  #ghWin { left: 130px; top: 58px; width: 600px; background: #0D1117;
+           border: 1px solid #2A313A; color: #C9D1D9; }
+  .br-bar { height: 32px; background: #171B21; display: flex; align-items: center;
+            gap: 10px; padding: 0 11px; border-bottom: 1px solid #2A313A; }
+  .br-dots { display: flex; gap: 5px; }
+  .br-dots i { width: 9px; height: 9px; border-radius: 50%; background: #3A424C; }
+  .br-url { flex: 1; background: #0D1117; border: 1px solid #2A313A; border-radius: 12px;
+            font-size: 11px; color: #8B949E; padding: 2px 10px;
+            font-family: var(--font-mono); }
+  .gh-body { padding: 14px 18px 16px; position: relative; }
+  .gh-repo { font-size: 16px; color: #E6EDF3; }
+  .gh-repo .gh-owner { color: #58A6FF; font-weight: 400; }
+  .gh-repo b { color: #58A6FF; }
+  .gh-lic { font-size: 10px; border: 1px solid #30363D; border-radius: 999px;
+            padding: 1px 8px; color: #8B949E; margin-left: 8px; vertical-align: 3px; }
+  .gh-desc { font-size: 12px; color: #8B949E; margin: 7px 0 12px; max-width: 46ch; }
+  .gh-actions { display: flex; justify-content: flex-end; }
+  .gh-btn.code { background: #238636; color: #fff; font-size: 12px; font-weight: 600;
+                 padding: 5px 14px; border-radius: 6px;
+                 display: inline-flex; align-items: center; gap: 7px; }
+  /* Треугольник на границах, а не текстовый символ: у знака «⌄» своя базовая линия,
+     и он всегда висит криво относительно надписи. */
+  .caret { width: 0; height: 0; border-left: 4px solid transparent;
+           border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+  .gh-menu { position: absolute; right: 18px; top: 130px; width: 176px; z-index: 5;
+             background: #161B22; border: 1px solid #30363D; border-radius: 7px;
+             padding: 4px; box-shadow: 0 10px 28px rgba(0,0,0,.6);
+             opacity: 0; transform: translateY(-5px); transition: opacity .2s, transform .2s; }
+  .gh-menu.show { opacity: 1; transform: none; }
+  .gh-mi { font-size: 11.5px; color: #C9D1D9; padding: 6px 9px; border-radius: 5px; }
+  .gh-mi.hi { background: #1F6FEB; color: #fff; font-weight: 600; }
+  .gh-files { margin-top: 14px; border: 1px solid #30363D; border-radius: 7px; overflow: hidden; }
+  .gh-f { display: flex; justify-content: space-between; font-size: 11.5px;
+          padding: 6px 11px; border-bottom: 1px solid #21262D; color: #C9D1D9; }
+  .gh-f:last-child { border-bottom: none; }
+  .gh-f span:last-child { color: #6E7681; }
+
+  /* ── Рабочий стол ──────────────────────────────────────── */
+  .desktop { position: absolute; left: 30px; top: 26px; display: flex; flex-direction: column;
+             gap: 14px; z-index: 8; }
+  .dt-item { width: 96px; text-align: center; font-size: 11px; color: #D6E3EF;
+             opacity: 0; transform: scale(.9); transition: opacity .3s ease, transform .3s ease; }
+  .dt-item.show { opacity: 1; transform: none; }
+  .dt-item span { display: block; margin-top: 4px; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+  .dt-ico { width: 46px; height: 46px; margin: 0 auto; border-radius: 7px;
+            display: grid; place-items: center; box-shadow: 0 6px 16px rgba(0,0,0,.45); }
+  .zipico { background: linear-gradient(160deg, #2E74B5, #1B4E7C); color: #fff;
+            font-size: 10px; font-weight: 700; letter-spacing: .05em; }
+  .folderico { background: linear-gradient(160deg, #F0B65B, #D9922E); font-size: 22px; }
+
+  /* ── Окно папки ────────────────────────────────────────── */
+  #folderWin, #distWin { left: 190px; top: 120px; width: 470px; background: #F4F7FA; color: #14283C; }
+  .folder-body { padding: 8px 12px 12px; }
+  .fl-row { display: flex; justify-content: space-between; font-size: 12px;
+            padding: 6px 9px; border-radius: 5px; color: #22384E; }
+  .fl-row span:last-child { color: #6E8AA3; font-size: 11px; }
+  .fl-row.hi { background: #E8F1FA; }
+  .fl-row.pick { background: var(--brand); color: #fff; }
+  .fl-row.pick span:last-child { color: rgba(255,255,255,.75); }
+
+  /* ── Консоль ───────────────────────────────────────────── */
+  .term { left: 150px; top: 96px; width: 560px; background: #0A0E14;
+          border: 1px solid #22303F; }
+  .term-bar { height: 28px; background: #14202D; display: flex; align-items: center;
+              padding: 0 11px; font-size: 11.5px; color: #9FB4CA;
+              border-bottom: 1px solid #22303F; }
+  .term-body { padding: 11px 13px; font-family: var(--font-mono); font-size: 11.5px;
+               line-height: 1.75; color: #B7C6D6; min-height: 176px; }
+  .term-body .p { color: #6FBF73; }
+  .term-body .ok { color: #7FD1A8; }
+  .term-body .warn { color: #E8B761; }
+  .term-body .dim { color: #5E7286; }
+  .term-body div { opacity: 0; animation: lineIn .3s ease forwards; }
+
+  /* ── Диалог моделей ────────────────────────────────────── */
+  #modelsWin { left: 195px; top: 118px; width: 450px; background: var(--chrome);
+               border: 1px solid var(--line); }
+  .dl-bar { height: 6px; border-radius: 999px; background: rgba(255,255,255,.1);
+            margin-top: 11px; overflow: hidden; }
+  .dl-bar span { display: block; height: 100%; width: 0; border-radius: 999px;
+                 background: linear-gradient(90deg, var(--brand), var(--accent)); }
+  .dl-bar span.go { animation: fill 2.4s ease-out forwards; }
+  @keyframes fill { to { width: 100% } }
+
+  /* ── Окно выбора источника ─────────────────────────────── */
+  #pickWin { left: 150px; top: 70px; width: 560px; background: #F4F7FA; color: #14283C; }
+  .pick-bar { height: 30px; background: #E4EBF2; display: flex; align-items: center;
+              padding: 0 10px; font-size: 12px; color: #34506B;
+              border-bottom: 1px solid #D3DEE8; }
+  .pick-body { padding: 13px 15px 15px; }
+  .pick-h { font-size: 15px; font-weight: 650; margin-bottom: 3px; }
+  .pick-sub { font-size: 11.5px; color: #5A748C; margin-bottom: 11px; }
+  .pick-table { border: 1px solid #D3DEE8; border-radius: 6px; overflow: hidden; background: #fff; }
+  .pick-head, .pick-row {
+    display: grid; grid-template-columns: 54px 1fr 1.3fr 82px;
+    font-size: 11.5px; align-items: center;
+  }
+  .pick-head { background: #EDF2F7; color: #5A748C; font-weight: 600; padding: 5px 0; }
+  .pick-row { padding: 6px 0; border-top: 1px solid #EAF0F5; color: #22384E; }
+  .pick-row.sel { background: #E8F1FA; }
+  .pick-head span, .pick-row span { padding: 0 8px; overflow: hidden;
+                                    text-overflow: ellipsis; white-space: nowrap; }
+  .cbx { width: 13px; height: 13px; border: 1.5px solid #8FA6BE; border-radius: 3px;
+         margin: 0 auto; display: grid; place-items: center; background: #fff; }
+  .cbx.on { background: var(--brand); border-color: var(--brand); }
+  .cbx.on::after { content: "✓"; color: #fff; font-size: 10px; line-height: 1; }
+  .pick-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .pbtn { font-size: 12px; padding: 6px 14px; border-radius: 5px;
+          background: #E1E8EF; color: #2A4159; }
+  .pbtn.primary { background: var(--brand); color: #fff; font-weight: 600; }
+
+  /* ── Стенограмма ───────────────────────────────────────── */
+  .live-strip {
+    position: absolute; left: 46px; bottom: 56px; width: 660px;
+    background: rgba(11,22,36,.94); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px;
+    opacity: 0; transform: translateY(8px);
+    transition: opacity .3s ease, transform .3s ease;
+  }
+  .live-strip.show { opacity: 1; transform: none; }
+  .live-h { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+            color: var(--accent); margin-bottom: 7px; font-weight: 600;
+            display: flex; justify-content: space-between; }
+  .live-h .src { color: var(--muted); letter-spacing: .04em; text-transform: none; }
+  .live-lines { font-family: var(--font-mono); font-size: 11.5px; color: #C6D4E3;
+                display: flex; flex-direction: column; gap: 4px; min-height: 56px; }
+  .ln { opacity: 0; animation: lineIn .35s ease forwards; display: flex; gap: 7px; }
+  .ln .tag { flex: none; font-size: 9.5px; padding: 1px 5px; border-radius: 3px;
+             font-family: var(--font-ui); letter-spacing: .03em; }
+  .ln.app .tag { background: rgba(46,116,181,.3); color: #9CC6EA; }
+  .ln.mic .tag { background: rgba(127,209,168,.22); color: var(--mic); }
+  .ln.mic { color: #DCEFE6; }
+  .ln .tc { color: var(--muted); }
+  @keyframes lineIn { to { opacity: 1 } }
+
+  /* ── Карточка завершения ───────────────────────────────── */
+  #cardWin { left: 195px; top: 105px; width: 450px; background: var(--chrome);
+             border: 1px solid var(--line); }
+  .card-bar { height: 30px; background: var(--surface); display: flex; align-items: center;
+              padding: 0 10px; font-size: 12px; color: #CBD8E6; border-bottom: 1px solid var(--line); }
+  .card-body { padding: 13px 15px 15px; }
+  .card-h { font-size: 15px; font-weight: 650; margin-bottom: 3px; color: var(--ink); }
+  .card-sub { font-size: 11.5px; color: var(--muted); margin-bottom: 11px; }
+  .file-list { background: rgba(0,0,0,.24); border: 1px solid var(--line); border-radius: 6px;
+               padding: 8px 10px; font-family: var(--font-mono); font-size: 11px;
+               color: #B9C9DA; display: flex; flex-direction: column; gap: 2px; }
+  .file-list .sz { color: var(--muted); }
+  .file-list .hint { color: var(--accent); font-family: var(--font-ui); font-size: 10.5px;
+                     margin-top: 4px; }
+  .card-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+  .btn { font-size: 12px; padding: 6px 13px; border-radius: 5px;
+         background: rgba(255,255,255,.09); color: #DDE7F2; }
+  .btn.primary { background: var(--brand); color: #fff; font-weight: 600; position: relative; }
+
+  /* ── Архив: лежит на рабочем столе, летит ПОВЕРХ окон ──── */
+  .zip { position: absolute; left: 26px; top: 200px; width: 96px; text-align: center;
+         opacity: 0; transition: opacity .3s ease; pointer-events: none; z-index: 45; }
+  .zip.show { opacity: 1; }
+  .zip.fly { animation: fly 1.8s cubic-bezier(.5,0,.3,1) forwards; }
+  /* Летит с рабочего стола в окно Claude справа: ~(74,230) → ~(820,280) */
+  @keyframes fly { to { transform: translate(746px, 44px) scale(.45); opacity: 0; } }
+  .zip-box { width: 46px; height: 46px; margin: 0 auto 4px;
+             background: linear-gradient(160deg, #2E74B5, #1B4E7C); border-radius: 7px;
+             display: grid; place-items: center; box-shadow: 0 6px 16px rgba(0,0,0,.45);
+             color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .05em; }
+  .zip-name { font-size: 11px; color: #D6E3EF; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+
+  /* ── Окно Claude ───────────────────────────────────────── */
+  #claudeWin { right: 26px; top: 46px; width: 306px; height: 470px;
+               background: #FAF9F7; display: flex; flex-direction: column;
+               border: 1px solid #E3DDD4; }
+  .cl-bar { height: 32px; background: #F0EDE8; display: flex; align-items: center; gap: 8px;
+            padding: 0 10px; font-size: 12px; color: #3D3A35; border-bottom: 1px solid #E3DDD4;
+            flex: none; }
+  .cl-logo { width: 16px; height: 16px; flex: none; }
+  .cl-body { flex: 1; padding: 11px; overflow: hidden; display: flex;
+             flex-direction: column; gap: 9px; }
+
+  .cl-msg { font-size: 11px; line-height: 1.5; }
+  .cl-msg.user { align-self: flex-end; max-width: 88%; background: #EDE9E3;
+                 color: #2E2B27; border-radius: 10px 10px 3px 10px; padding: 7px 9px; }
+  .cl-msg.user .att { display: flex; align-items: center; gap: 5px; margin-bottom: 4px;
+                      background: #fff; border: 1px solid #DED8CF; border-radius: 5px;
+                      padding: 3px 6px; font-family: var(--font-mono); font-size: 10px;
+                      color: #4A463F; }
+  .cl-msg.bot { color: #2E2B27; }
+  .cl-skill { display: inline-flex; align-items: center; gap: 5px; font-size: 10px;
+              background: #FCEEE6; border: 1px solid #F0D2C0; color: #A8542A;
+              border-radius: 999px; padding: 2px 8px; margin-bottom: 6px; }
+
+  .memo-h { font-size: 12px; font-weight: 650; color: #241F1A; margin-bottom: 2px; }
+  .memo-meta { font-size: 10px; color: #7C736A; margin-bottom: 8px; }
+  .memo-sec { font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+              color: #B0522A; margin: 9px 0 4px; font-weight: 700; }
+  .memo-item { font-size: 10.5px; color: #3B372F; padding-left: 11px; position: relative;
+               margin-bottom: 4px; line-height: 1.45; }
+  .memo-item::before { content: ""; position: absolute; left: 0; top: 6px; width: 4px;
+                       height: 4px; border-radius: 50%; background: #C97B4E; }
+  .memo-item .tc { color: #8A8076; font-family: var(--font-mono); font-size: 9.5px; }
+  .memo-item .undef { color: #B0522A; font-weight: 600; }
+  .memo-item .mic { color: #2F7D5B; font-weight: 600; }
+
+  .out-files { margin-top: 9px; display: flex; flex-direction: column; gap: 4px; }
+  .out-f { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: #2E2B27;
+           background: #fff; border: 1px solid #E3DDD4; border-radius: 6px; padding: 5px 7px; }
+  .out-f span { width: 15px; height: 15px; border-radius: 3px; flex: none;
+                display: grid; place-items: center; color: #fff; font-size: 8.5px; font-weight: 700; }
+  .out-f .docx { background: #2B579A; }
+  .out-f .md { background: #6B7280; }
+  .out-f i { margin-left: auto; font-style: normal; color: #8A8076; font-size: 9.5px; }
+
+  .cl-input { flex: none; border: 1px solid #E0DAD1; background: #fff; border-radius: 8px;
+              padding: 7px 9px; font-size: 10.5px; color: #A29A90;
+              display: flex; justify-content: space-between; align-items: center; }
+  .cl-send { width: 18px; height: 18px; border-radius: 5px; background: #D97757; }
+
+  .reveal > * { opacity: 0; }
+  .reveal.go > * { animation: lineIn .4s ease forwards; }
+  .reveal.go > *:nth-child(1) { animation-delay: .05s }
+  .reveal.go > *:nth-child(2) { animation-delay: .2s }
+  .reveal.go > *:nth-child(3) { animation-delay: .38s }
+  .reveal.go > *:nth-child(4) { animation-delay: .5s }
+  .reveal.go > *:nth-child(5) { animation-delay: .68s }
+  .reveal.go > *:nth-child(6) { animation-delay: .8s }
+  .reveal.go > *:nth-child(7) { animation-delay: .98s }
+  .reveal.go > *:nth-child(8) { animation-delay: 1.12s }
+  .reveal.go > *:nth-child(9) { animation-delay: 1.3s }
+  .reveal.go > *:nth-child(10) { animation-delay: 1.45s }
+
+  /* ── Панель задач, трей, меню ──────────────────────────── */
+  .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 38px;
+             background: rgba(10,20,33,.94); border-top: 1px solid rgba(255,255,255,.07);
+             display: flex; align-items: center; padding: 0 12px; gap: 10px; z-index: 30; }
+  .tb-apps { display: flex; gap: 6px; flex: 1; }
+  .tb-app { width: 28px; height: 24px; border-radius: 5px; background: rgba(255,255,255,.08);
+            display: grid; place-items: center; font-size: 11px; color: #9FB4CA; }
+  .tray { display: flex; align-items: center; gap: 10px; }
+  .tray-icon { width: 19px; height: 19px; border-radius: 50%; background: #14395E;
+               display: grid; place-items: center; position: relative; opacity: 0;
+               transition: opacity .3s ease; }
+  .tray-icon.on { opacity: 1; }
+  .tray-icon .tdot { width: 7px; height: 7px; border-radius: 50%; background: #9CA3AF;
+                     transition: background .3s; }
+  .tray-icon.rec .tdot { background: var(--rec); animation: pulse 1.6s ease-in-out infinite; }
+  .tray-icon.hl::after { content: ""; position: absolute; inset: -6px; border-radius: 50%;
+                         border: 2px solid var(--accent); animation: hlPulse 1.1s ease-in-out infinite; }
+  .clock { font-size: 11.5px; color: #9FB4CA; font-variant-numeric: tabular-nums;
+           text-align: right; line-height: 1.25; }
+
+  .tray-menu {
+    position: absolute; right: 16px; bottom: 46px; width: 210px; z-index: 35;
+    background: #17293D; border: 1px solid var(--line); border-radius: 8px;
+    padding: 5px; box-shadow: 0 14px 34px rgba(0,0,0,.5);
+    opacity: 0; transform: translateY(6px); pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .tray-menu.show { opacity: 1; transform: none; }
+  .tm-item { font-size: 12px; color: #D2DEEA; padding: 6px 9px; border-radius: 5px; }
+  .tm-item.strong { font-weight: 650; }
+  .tm-item.hi { background: var(--brand); color: #fff; }
+  .tm-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+
+  /* ── Курсор и всплывашка ───────────────────────────────── */
+  .cursor { position: absolute; width: 20px; height: 20px; left: 0; top: 0;
+            pointer-events: none; z-index: 60;
+            transition: transform .8s cubic-bezier(.45,.05,.25,1);
+            filter: drop-shadow(0 2px 3px rgba(0,0,0,.55)); }
+  .stage.noanim, .stage.noanim * { transition: none !important; animation: none !important; }
+
+  .cursor.click::after { content: ""; position: absolute; left: -7px; top: -7px;
+    width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--accent);
+    animation: ring .5s ease-out; }
+  @keyframes ring { from { transform: scale(.35); opacity: .9 } to { transform: scale(1.3); opacity: 0 } }
+
+  .toast {
+    position: absolute; z-index: 55; max-width: 260px;
+    background: rgba(9,18,30,.96); border: 1px solid var(--accent);
+    border-radius: 8px; padding: 8px 11px; font-size: 11.5px; color: #E7EFF7;
+    opacity: 0; transform: translateY(6px); transition: opacity .25s, transform .25s;
+    pointer-events: none; line-height: 1.45;
+  }
+  .toast.show { opacity: 1; transform: none; }
+  .toast b { color: var(--mic); }
+
+  /* ── Пояснение под сценой ──────────────────────────────── */
+  .explain {
+    display: grid; grid-template-columns: 46px 1fr; gap: 14px; align-items: start;
+    background: var(--card); border: 1px solid var(--card-line);
+    border-radius: 12px; padding: 16px 18px; min-height: 92px;
+  }
+  .exp-num {
+    width: 46px; height: 46px; border-radius: 12px; background: var(--brand);
+    color: #fff; display: grid; place-items: center;
+    font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .exp-title { font-size: 1.02rem; font-weight: 650; margin: 0 0 3px; }
+  .exp-text { margin: 0; font-size: 0.9rem; color: var(--page-muted); max-width: 78ch; }
+  .exp-text b { color: var(--page-ink); font-weight: 600; }
+
+  /* ── Управление ────────────────────────────────────────── */
+  .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .play { display: inline-flex; align-items: center; gap: 8px; background: var(--brand);
+          color: #fff; border: none; border-radius: 7px; padding: 9px 16px;
+          font-family: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; }
+  .play:hover { background: #3A85CA; }
+  .play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .steps { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; list-style: none; margin: 0; padding: 0; }
+  .steps li { font-size: .72rem; color: var(--page-muted); border: 1px solid var(--card-line);
+              border-radius: 999px; padding: 3px 9px; cursor: pointer; white-space: nowrap; }
+  .steps li:hover { color: var(--page-ink); }
+  .steps li[aria-current="true"] { color: #fff; background: var(--brand); border-color: var(--brand); }
+
+  .notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .note { background: var(--card); border: 1px solid var(--card-line);
+          border-radius: 10px; padding: 14px 16px; }
+  .note h3 { margin: 0 0 5px; font-size: .92rem; font-weight: 650; }
+  .note p { margin: 0; font-size: .85rem; color: var(--page-muted); }
+
+  /* Напутствие и правовое напоминание: единственный блок с акцентной рамкой на странице —
+     он должен читаться отдельно от остального, а не теряться среди карточек. */
+  .outro { border: 1px solid var(--accent); border-radius: 12px;
+           padding: 20px 22px; background: var(--card); }
+  .outro h2 { margin: 0 0 8px; font-size: 1.25rem; font-weight: 650;
+              letter-spacing: -0.01em; }
+  .outro p { margin: 0; font-size: .92rem; color: var(--page-muted); max-width: 76ch; }
+  .outro strong { color: var(--page-ink); }
+  .outro-note { margin-top: 10px !important; font-size: .85rem; }
+
+  footer { border-top: 1px solid var(--card-line); padding-top: 16px; font-size: .8rem;
+           color: var(--page-muted); display: flex; justify-content: space-between;
+           gap: 14px; flex-wrap: wrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cursor { transition: none; }
+    * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Демонстрация</span>
+    <h1>Как MeetMemo превращает встречу в мемо</h1>
+    <p class="lede">
+      Весь путь целиком: скачали с GitHub, поставили, записали встречу, получили мемо.
+      Распознавание идёт на вашем компьютере, без облака — наружу уходит только архив,
+      и только когда вы отправите его сами. Каждый шаг пояснён под окном.
+    </p>
+  </header>
+
+  <div class="stage-outer">
+    <div class="stage" id="stage">
+
+      <!-- Шаг 1: страница репозитория на GitHub -->
+      <section class="win" id="ghWin">
+        <div class="br-bar">
+          <span class="br-dots"><i></i><i></i><i></i></span>
+          <span class="br-url">github.com/XPycTuwe/MeetMEMO</span>
+        </div>
+        <div class="gh-body">
+          <div class="gh-repo"><span class="gh-owner">XPycTuwe /</span> <b>MeetMEMO</b>
+            <span class="gh-lic">AGPL-3.0</span></div>
+          <div class="gh-desc">Локальная стенография встреч для Windows. Русская речь
+            распознаётся на вашем компьютере, без облака.</div>
+          <div class="gh-actions">
+            <span class="gh-btn code" id="ghCode">Code<i class="caret"></i></span>
+          </div>
+          <div class="gh-menu" id="ghMenu">
+            <div class="gh-mi">Clone · HTTPS</div>
+            <div class="gh-mi hi" id="ghDl">↓ Download ZIP</div>
+          </div>
+          <div class="gh-files">
+            <div class="gh-f"><span>📁 src</span><span>исходный код</span></div>
+            <div class="gh-f"><span>📁 skill</span><span>правила для Claude</span></div>
+            <div class="gh-f"><span>📄 publish.cmd</span><span>сборка дистрибутива</span></div>
+            <div class="gh-f"><span>📄 README.md</span><span>инструкция</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Рабочий стол: скачанный архив и распакованная папка -->
+      <div class="desktop" id="desktop">
+        <div class="dt-item" id="dtZip">
+          <div class="dt-ico zipico">ZIP</div>
+          <span>MeetMEMO-main.zip</span>
+        </div>
+        <div class="dt-item" id="dtFolder">
+          <div class="dt-ico folderico">📁</div>
+          <span>MeetMEMO-main</span>
+        </div>
+      </div>
+
+      <!-- Окно распакованной папки -->
+      <section class="win" id="folderWin">
+        <div class="pick-bar">MeetMEMO-main — проводник</div>
+        <div class="folder-body">
+          <div class="fl-row"><span>📁 src</span><span>исходный код</span></div>
+          <div class="fl-row"><span>📁 skill</span><span>правила для Claude</span></div>
+          <div class="fl-row hi" id="flPublish"><span>⚙ publish.cmd</span><span>собрать приложение</span></div>
+          <div class="fl-row hi" id="flBat"><span>▶ MeetMemo.bat</span><span>запустить собранное</span></div>
+          <div class="fl-row"><span>📄 README.md</span><span>инструкция</span></div>
+        </div>
+      </section>
+
+      <!-- Папка со собранным приложением -->
+      <section class="win" id="distWin">
+        <div class="pick-bar">dist\MeetMemo — проводник</div>
+        <div class="folder-body">
+          <div class="fl-row hi" id="flExe"><span>▶ MeetMemo.exe</span><span>запустить приложение</span></div>
+          <div class="fl-row"><span>📁 models</span><span>сюда лягут модели</span></div>
+          <div class="fl-row"><span>📄 MeetMemo.dll</span><span>код приложения</span></div>
+          <div class="fl-row"><span>📄 sherpa-onnx.dll</span><span>движок распознавания</span></div>
+          <div class="fl-row"><span>📄 ещё 180 файлов</span><span>.NET внутри сборки</span></div>
+        </div>
+      </section>
+
+      <!-- Шаг: сборка -->
+      <section class="win term" id="buildWin">
+        <div class="term-bar">Командная строка — папка MeetMEMO-main</div>
+        <div class="term-body" id="termBody"></div>
+      </section>
+
+      <!-- Шаг 3: скачивание моделей -->
+      <section class="win" id="modelsWin">
+        <div class="card-bar">MeetMemo — первый запуск</div>
+        <div class="card-body">
+          <div class="card-h">Нужны модели распознавания</div>
+          <div class="card-sub">Загружаются один раз, дальше интернет не нужен.</div>
+          <div class="file-list">
+            <div>GigaAM v2 — русская речь <span class="sz">180 МБ</span></div>
+            <div>Silero VAD — границы фраз <span class="sz">2 МБ</span></div>
+            <div>Whisper turbo — знаки препинания <span class="sz">550 МБ</span></div>
+          </div>
+          <div class="dl-bar"><span id="dlFill"></span></div>
+          <div class="card-actions">
+            <span class="btn">Позже</span>
+            <span class="btn primary" id="dlBtn">Скачать</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Окно выбора источника -->
+      <section class="win" id="pickWin">
+        <div class="pick-bar">MeetMemo — приложения и параметры записи</div>
+        <div class="pick-body">
+          <div class="pick-h">Отметьте приложения для стенографии</div>
+          <div class="pick-sub">Галочка «Вести» добавляет кнопки MeetMemo в заголовки окон
+            приложения — запись начинается оттуда.</div>
+          <div class="pick-table">
+            <div class="pick-head"><span>Вести</span><span>Приложение</span><span>Окно</span><span>Состояние</span></div>
+            <div class="pick-row sel">
+              <span><i class="cbx" id="cbx1"></i></span>
+              <span>Видеоконференция</span><span>Планёрка команды</span><span>открыто</span>
+            </div>
+            <div class="pick-row">
+              <span><i class="cbx" id="cbx2"></i></span>
+              <span>Яндекс Браузер</span><span>Встреча в вебе</span><span>открыто</span>
+            </div>
+            <div class="pick-row">
+              <span><i class="cbx"></i></span>
+              <span>Проводник</span><span>Документы</span><span>открыто</span>
+            </div>
+          </div>
+          <div class="pick-actions">
+            <span class="pbtn">Отмена</span>
+            <span class="pbtn primary" id="pickStart">Сохранить</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Окно встречи -->
+      <section class="win" id="meetWin">
+        <div class="titlebar">
+          <span class="app-mark"></span>
+          <span class="title">Планёрка команды — видеоконференция</span>
+          <div class="mm-overlay">
+            <div class="mm-panel" id="mmPanel">
+              <span class="mm-time" id="mmTime">MeetMemo</span>
+              <span class="mm-btn" id="mmRecBtn">Записать</span>
+              <span class="mm-btn ghost" id="mmPauseBtn" hidden>Пауза</span>
+              <span class="mm-btn ghost" id="mmImpBtn" hidden>Важно</span>
+            </div>
+            <span class="mm-shot" id="mmShot">
+              <svg viewBox="0 0 16 14" fill="#fff" aria-hidden="true">
+                <path d="M5 0h6l1 2h2.5A1.5 1.5 0 0 1 16 3.5v9A1.5 1.5 0 0 1 14.5 14h-13A1.5 1.5 0 0 1 0 12.5v-9A1.5 1.5 0 0 1 1.5 2H4z"/>
+                <circle cx="8" cy="8" r="3" fill="#2E74B5"/>
+              </svg>
+            </span>
+            <span class="mm-badge" id="mmBadge"><span class="mm-dot"></span></span>
+          </div>
+          <div class="sys-btns"><span class="sys-btn">‒</span><span class="sys-btn">▢</span><span class="sys-btn">✕</span></div>
+        </div>
+
+        <div class="meeting-body">
+          <div class="tile" id="tileA"><div class="av">АМ</div><span class="who">Андрей</span></div>
+          <div class="tile" id="tileB"><div class="av">ЕК</div><span class="who">Елена</span></div>
+          <div class="tile slide" id="slide">
+            <!-- Первый слайд — график: чтобы смена на таблицу читалась с одного взгляда -->
+            <div class="slide-1">
+              <div class="slide-h">Закрыто задач по неделям</div>
+              <div class="chart">
+                <div class="bars">
+                  <span class="bar" style="height: 38%"></span>
+                  <span class="bar" style="height: 55%"></span>
+                  <span class="bar" style="height: 45%"></span>
+                  <span class="bar" style="height: 72%"></span>
+                  <span class="bar" style="height: 64%"></span>
+                  <span class="bar last" style="height: 100%"><i class="bar-val">14</i></span>
+                </div>
+                <div class="axis">
+                  <span>н1</span><span>н2</span><span>н3</span><span>н4</span><span>н5</span><span>н6</span>
+                </div>
+              </div>
+            </div>
+            <div class="slide-2">
+              <div class="slide-h">Сроки релиза</div>
+              <div class="slide-row"><span>Тестирование</span><b>до 12-го</b></div>
+              <div class="slide-row"><span>Релиз</span><b>15-е</b></div>
+              <div class="slide-row"><span>Риск</span><b>средний</b></div>
+            </div>
+          </div>
+          <div class="tile you" id="tileYou"><div class="av">Я</div><span class="who">Вы</span></div>
+        </div>
+        <div class="flash" id="flash"></div>
+      </section>
+
+      <!-- Стенограмма -->
+      <div class="live-strip" id="liveStrip">
+        <div class="live-h">
+          <span>Стенограмма — прямо во время встречи</span>
+          <span class="src" id="liveSrc">две дорожки: микрофон и звук приложения</span>
+        </div>
+        <div class="live-lines" id="liveLines"></div>
+      </div>
+
+      <!-- Карточка завершения -->
+      <section class="win" id="cardWin">
+        <div class="card-bar">Встреча записана</div>
+        <div class="card-body">
+          <div class="card-h">Планёрка команды</div>
+          <div class="card-sub">12 минут 40 секунд · 38 реплик · 3 снимка</div>
+          <div class="file-list">
+            <div>session.json <span class="sz">1,1 КБ</span></div>
+            <div>transcript.jsonl <span class="sz">8,4 КБ</span> — с пометкой, кто говорил</div>
+            <div>transcript.md <span class="sz">5,1 КБ</span></div>
+            <div>screenshots/ <span class="sz">3 файла</span></div>
+            <div>КАК_ИСПОЛЬЗОВАТЬ.md <span class="sz">1 КБ</span></div>
+            <div>!ИНСТРУКЦИЯ_ДЛЯ_CLAUDE.md <span class="sz">16 КБ</span> — правила мемо</div>
+            <div class="hint">Аудио по умолчанию в архив не кладётся — файлы тяжёлые.</div>
+          </div>
+          <div class="card-actions">
+            <span class="btn">Открыть папку</span>
+            <span class="btn primary" id="zipBtn">Собрать ZIP</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Архив -->
+      <div class="zip" id="zip">
+        <div class="zip-box">ZIP</div>
+        <div class="zip-name">планёрка-<br>команды.zip</div>
+      </div>
+
+      <!-- Окно Claude -->
+      <section class="win" id="claudeWin">
+        <div class="cl-bar">
+          <svg class="cl-logo" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="#D97757" d="M12 1.6l2.1 6 6-2.1-4.4 4.5 4.4 4.5-6-2.1-2.1 6-2.1-6-6 2.1 4.4-4.5L3.9 5.5l6 2.1z"/>
+          </svg>
+          <span>Claude</span>
+        </div>
+        <div class="cl-body">
+          <div class="cl-msg user reveal" id="clUser">
+            <div class="att">📎 планёрка.zip · 2,4 МБ</div>
+          </div>
+          <div class="cl-msg bot reveal" id="clBot">
+            <span class="cl-skill">✦ прочитана инструкция из архива</span>
+            <div class="memo-h">Мемо: планёрка команды</div>
+            <div class="memo-meta">01.08.2026 · 12 мин · говорили: вы и двое коллег</div>
+            <div class="memo-sec">Решения</div>
+            <div class="memo-item">Релиз переносится на 15-е <span class="tc">[04:12]</span></div>
+            <div class="memo-sec">Поручения</div>
+            <div class="memo-item"><span class="mic">Вы</span> — подготовить отчёт к пятнице <span class="tc">[08:05]</span></div>
+            <div class="memo-item">Закрыть 2 просроченные задачи — ответственный: <span class="undef">не определён</span> <span class="tc">[06:30]</span></div>
+            <div class="out-files">
+              <div class="out-f"><span class="docx">W</span>memo.docx<i>мемо документом Word</i></div>
+              <div class="out-f"><span class="md">M</span>transcript_clean.md<i>вся речь, спорные места отмечены</i></div>
+              <div class="out-f"><span class="md">M</span>actions.json<i>поручения списком</i></div>
+            </div>
+          </div>
+        </div>
+        <div class="cl-input" style="margin: 0 11px 11px;">
+          <span>Спросить Claude…</span><span class="cl-send"></span>
+        </div>
+      </section>
+
+      <!-- Меню трея -->
+      <div class="tray-menu" id="trayMenu">
+        <div class="tm-item strong hi" id="tmNew">Приложения и параметры записи</div>
+        <div class="tm-item">Записать весь звук системы</div>
+        <div class="tm-sep"></div>
+        <div class="tm-item">Последние встречи</div>
+        <div class="tm-item">Проверить модели распознавания</div>
+      </div>
+
+      <!-- Панель задач -->
+      <div class="taskbar">
+        <div class="tb-apps">
+          <span class="tb-app">▤</span><span class="tb-app">◈</span>
+        </div>
+        <div class="tray">
+          <span class="tray-icon" id="trayIcon"><span class="tdot"></span></span>
+          <span class="clock">14:07<br>01.08.2026</span>
+        </div>
+      </div>
+
+      <div class="toast" id="toast"></div>
+
+      <svg class="cursor" id="cursor" viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M2 1l13 8-5.5 1.2L12 17l-2.6 1.1-2.4-6L2 15z" fill="#fff" stroke="#0B1A2B" stroke-width="1.2"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="explain">
+    <div class="exp-num" id="expNum">1</div>
+    <div>
+      <p class="exp-title" id="expTitle">Запускаем MeetMemo</p>
+      <p class="exp-text" id="expText">Приложение живёт в области уведомлений.</p>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="play" id="playBtn" type="button">
+      <span id="playIcon">▶</span><span id="playLabel">Смотреть заново</span>
+    </button>
+    <ul class="steps" id="stepList"></ul>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>Ваш голос — отдельной дорожкой</h3>
+      <p>Микрофон и звук встречи пишутся раздельно. Поэтому в стенограмме сразу видно,
+         где говорите вы, а где собеседники — и мемо не путает, кому что поручено.</p>
+    </div>
+    <div class="note">
+      <h3>Ничего не уходит в облако</h3>
+      <p>Распознаёт русская модель GigaAM прямо на вашем компьютере, примерно в восемь раз
+         быстрее реального времени — на процессоре, двумя потоками. Видеокарта не нужна,
+         интернет нужен один раз — скачать модель.</p>
+    </div>
+    <div class="note">
+      <h3>Мемо, которое не выдумывает</h3>
+      <p>Каждое решение с таймкодом, а вместо догадки об ответственном — честное
+         «не определён». Спорные места помечены отдельно.</p>
+    </div>
+    <div class="note">
+      <h3>Правила едут в архиве</h3>
+      <p>Файл <code>!ИНСТРУКЦИЯ_ДЛЯ_CLAUDE.md</code> кладётся в каждый архив. Ставить скилл,
+         настраивать что-то или писать запрос не нужно — достаточно отправить файл.
+         Claude здесь не обязателен: форматы открытые, и правила прочитает любая модель,
+         которая умеет принимать файлы.</p>
+    </div>
+    <div class="note">
+      <h3>Мемо в Word, речь — целиком</h3>
+      <p>На выходе <code>memo.docx</code> для рассылки коллегам и <code>transcript_clean.md</code>
+         со всей речью: по темам, по говорящим и с отдельным списком спорных мест.</p>
+    </div>
+  </div>
+
+  <div class="outro">
+    <h2>Приятного пользования!</h2>
+    <p>
+      И одна просьба, о которой легко забыть в спешке: <strong>предупреждайте коллег
+      о записи и спрашивайте их разрешения</strong>. Это не только вежливость — во многих
+      случаях запись без согласия участников прямо запрещена законом и правилами
+      организации.
+    </p>
+    <p class="outro-note">
+      MeetMemo на вашей стороне: пока идёт запись, красный значок виден и в заголовке окна,
+      и в трее. Скрытой записи в приложении нет — и не будет.
+    </p>
+  </div>
+
+  <footer>
+    <span>MeetMemo · локальная стенография встреч для Windows · AGPL-3.0</span>
+    <span>Интерфейс на странице — имитация: реальные окна и данные не показаны.</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const $ = function (id) { return document.getElementById(id); };
+
+  const stage = $("stage"), cursor = $("cursor"), toast = $("toast");
+  const pickWin = $("pickWin"), meetWin = $("meetWin"), cardWin = $("cardWin"),
+        claudeWin = $("claudeWin"), zip = $("zip");
+  const ghWin = $("ghWin"), ghMenu = $("ghMenu"), buildWin = $("buildWin"),
+        termBody = $("termBody"), modelsWin = $("modelsWin"), dlFill = $("dlFill");
+  const dtZip = $("dtZip"), dtFolder = $("dtFolder"), folderWin = $("folderWin"),
+        flPublish = $("flPublish"), flBat = $("flBat"),
+        distWin = $("distWin"), flExe = $("flExe");
+  const mmPanel = $("mmPanel"), mmBadge = $("mmBadge"), mmTime = $("mmTime"),
+        mmRecBtn = $("mmRecBtn"), mmPauseBtn = $("mmPauseBtn"), mmImpBtn = $("mmImpBtn"),
+        mmShot = $("mmShot");
+  const trayIcon = $("trayIcon"), trayMenu = $("trayMenu"), flash = $("flash");
+  const liveStrip = $("liveStrip"), liveLines = $("liveLines");
+  const cbx1 = $("cbx1"), cbx2 = $("cbx2"), slide = $("slide");
+  const clUser = $("clUser"), clBot = $("clBot");
+  const tileA = $("tileA"), tileB = $("tileB"), tileYou = $("tileYou");
+  const expNum = $("expNum"), expTitle = $("expTitle"), expText = $("expText");
+  const playBtn = $("playBtn"), playIcon = $("playIcon"), playLabel = $("playLabel");
+  const stepList = $("stepList");
+
+  let scale = 1;
+
+  function fit() {
+    const outer = stage.parentElement;
+    // Нижняя граница обязательна: пока раскладка не готова, ширина бывает нулевой,
+    // и без неё масштаб уходит в ноль или минус — сцена схлопывается совсем.
+    scale = Math.max(0.2, Math.min(1, (outer.clientWidth - 20) / 1000));
+    stage.style.transform = "scale(" + scale + ")";
+    outer.style.height = (600 * scale + 20) + "px";
+  }
+  window.addEventListener("resize", fit);
+
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  /* Единственный темп — спокойный: шагов много, и каждый нужно успеть прочитать. */
+  const rate = 1.35;
+  let timers = [], running = false, instant = false;
+
+  /*
+    Курсор обязан доехать раньше, чем сработает клик: паузы между действиями растянуты
+    темпом, а длительность перемещения сама по себе — нет. Держим её пропорциональной
+    самой короткой паузе (900 мс), иначе курсор щёлкает, не долетев до кнопки.
+  */
+  function syncCursorSpeed() {
+    cursor.style.transitionDuration = (0.62 * rate) + "s";
+  }
+
+  function later(fn, ms) {
+    if (instant) { fn(); return; }
+    timers.push(setTimeout(fn, reduced ? Math.min(ms, 100) : ms * rate));
+  }
+  function clearAll() { timers.forEach(clearTimeout); timers = []; }
+
+  /* Остриё стрелки нарисовано в точке (2,1) внутри значка, а не в его углу:
+     без этой поправки курсор всегда клеился бы чуть правее и ниже цели. */
+  const TIP_X = 2, TIP_Y = 1;
+
+  function moveTo(x, y) {
+    cursor.style.transform = "translate(" + (x - TIP_X) + "px," + (y - TIP_Y) + "px)";
+  }
+
+  /*
+    Наведение по реальному элементу, а не по посчитанным вручную координатам: любой сдвиг
+    вёрстки раньше означал промах курсора мимо кнопки. Доли fx/fy позволяют целиться не
+    только в центр — например, в конкретную строку списка.
+  */
+  function moveToEl(el, fx, fy) {
+    const s = stage.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    moveTo(
+      (r.left - s.left) / scale + (r.width / scale) * (fx === undefined ? 0.5 : fx),
+      (r.top - s.top) / scale + (r.height / scale) * (fy === undefined ? 0.5 : fy)
+    );
+  }
+  function click() {
+    cursor.classList.remove("click"); void cursor.offsetWidth; cursor.classList.add("click");
+  }
+  function showToast(html, x, y) {
+    toast.innerHTML = html;
+    toast.style.left = x + "px"; toast.style.top = y + "px";
+    toast.classList.add("show");
+  }
+  function hideToast() { toast.classList.remove("show"); }
+
+  let clockTimer = null;
+  function runClock(from) {
+    let s = from;
+    clockTimer = setInterval(function () {
+      s += 1;
+      mmTime.textContent = "00:" + String(Math.floor(s / 60)).padStart(2, "0")
+        + ":" + String(s % 60).padStart(2, "0");
+    }, 300);
+  }
+  function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
+
+  /* Реплики: source — из какой дорожки пришёл текст */
+  function addLine(source, time, text) {
+    const el = document.createElement("div");
+    el.className = "ln " + (source === "mic" ? "mic" : "app");
+    el.innerHTML = '<span class="tag">' + (source === "mic" ? "вы" : "встреча")
+      + '</span><span><span class="tc">[' + time + "]</span> " + text + "</span>";
+    liveLines.appendChild(el);
+    while (liveLines.children.length > 3) liveLines.removeChild(liveLines.firstChild);
+  }
+
+  /* Печать строк в консоль: html через <br> внутри одного div на строку */
+  function termLine(box, html) {
+    const el = document.createElement("div");
+    el.innerHTML = html;
+    box.appendChild(el);
+  }
+
+  function reset() {
+    clearAll(); stopClock(); hideToast();
+    [ghWin, folderWin, buildWin, distWin, modelsWin,
+     pickWin, meetWin, cardWin, claudeWin].forEach(function (w) { w.classList.remove("show"); });
+    ghMenu.classList.remove("show");
+    dtZip.classList.remove("show"); dtFolder.classList.remove("show");
+    flPublish.classList.remove("pick"); flBat.classList.remove("pick");
+    flExe.classList.remove("pick");
+    termBody.innerHTML = "";
+    dlFill.classList.remove("go");
+    zip.classList.remove("show", "fly");
+    trayIcon.classList.remove("on", "rec", "hl");
+    trayMenu.classList.remove("show");
+    mmPanel.classList.remove("open");
+    mmBadge.classList.remove("rec", "hl");
+    mmShot.classList.remove("on", "hl");
+    mmRecBtn.textContent = "Записать"; mmRecBtn.classList.remove("stop");
+    mmPauseBtn.hidden = true; mmImpBtn.hidden = true;
+    mmTime.textContent = "MeetMemo";
+    liveStrip.classList.remove("show"); liveLines.innerHTML = "";
+    cbx1.classList.remove("on"); cbx2.classList.remove("on");
+    slide.classList.remove("flip");
+    clUser.classList.remove("go"); clBot.classList.remove("go");
+    [tileA, tileB, tileYou].forEach(function (t) { t.classList.remove("speaking"); });
+    moveTo(430, 380);
+    setStep(-1);
+  }
+
+  /* Сценарий: заголовок, пояснение, действие, пауза до следующего шага */
+  const SCENE = [
+    {
+      t: "Скачиваем архив с GitHub",
+      x: "Исходный код открыт: заходим на страницу репозитория и жмём <b>Code → Download ZIP</b>. " +
+         "Ничего регистрировать и покупать не нужно — лицензия AGPL-3.0 разрешает пользоваться свободно.",
+      run: function () {
+        ghWin.classList.add("show");
+        moveTo(430, 330);
+        later(function () { moveToEl($("ghCode")); }, 900);
+        later(function () { click(); ghMenu.classList.add("show"); }, 2000);
+        later(function () { moveToEl($("ghDl")); }, 2700);
+        later(function () {
+          click();
+          dtZip.classList.add("show");
+          showToast("Скачиваем архив", 300, 400);
+        }, 3600);
+      },
+      wait: 5400
+    },
+    {
+      t: "Распаковываем архив в удобную директорию",
+      x: "Правая кнопка по скачанному <b>MeetMEMO-main.zip</b> → «Извлечь всё». " +
+         "Папку кладём куда удобно — рабочий стол, «Документы», отдельный диск. " +
+         "Запускать что-либо прямо из архива не нужно и не получится.",
+      run: function () {
+        hideToast();
+        ghWin.classList.remove("show"); ghMenu.classList.remove("show");
+        moveToEl(dtZip, 0.5, 0.35);
+        later(function () { click(); }, 900);
+        later(function () {
+          dtFolder.classList.add("show");
+          showToast("Распаковываем архив", 150, 200);
+        }, 1700);
+      },
+      wait: 4200
+    },
+    {
+      t: "Открываем папку и запускаем publish.cmd",
+      x: "Двойной щелчок по <b>publish.cmd</b> — он скачает нужные библиотеки и соберёт " +
+         "готовый <b>MeetMemo.exe</b>. Делается это один раз. " +
+         "Лежащий рядом <b>MeetMemo.bat</b> сам ничего не собирает: он находит уже " +
+         "готовый exe и запускает его — им пользуются после сборки.",
+      run: function () {
+        hideToast();
+        moveToEl(dtFolder, 0.5, 0.35);
+        later(function () { click(); folderWin.classList.add("show"); }, 1000);
+        later(function () { moveToEl(flPublish); }, 1700);
+        later(function () {
+          flPublish.classList.add("pick");
+          showToast("Запускаем publish.cmd — сборка приложения", 250, 400);
+        }, 2700);
+        later(function () { click(); }, 3600);
+      },
+      wait: 5400
+    },
+    {
+      t: "Сборщик доставляет всё, чего не хватает",
+      x: "Собирать приложение умеет <b>.NET 8 SDK</b>, и если его нет, publish.cmd спросит " +
+         "разрешения и поставит сам — командой <b>winget install Microsoft.DotNet.SDK.8</b>, " +
+         "без прав администратора. Ходить на сайт Microsoft и разбираться, чем SDK отличается " +
+         "от Runtime, не придётся. Вводить тоже ничего не нужно: достаточно согласиться.",
+      run: function () {
+        hideToast();
+        flPublish.classList.remove("pick");
+        folderWin.classList.remove("show");
+        buildWin.classList.add("show");
+        moveTo(430, 330);
+        termLine(termBody, '<span class="p">D:\\MeetMemo&gt;</span> publish.cmd');
+        later(function () {
+          termLine(termBody, '<span class="warn">Не найден .NET 8 SDK — это компилятор.</span>');
+        }, 900);
+        later(function () {
+          termLine(termBody, 'Установить .NET 8 SDK сейчас? [Y/n] <span class="p">Y</span>');
+        }, 1900);
+        later(function () {
+          termLine(termBody, '<span class="dim">winget install Microsoft.DotNet.SDK.8</span>');
+        }, 2900);
+        later(function () {
+          termLine(termBody, '<span class="ok">.NET 8 SDK установлен.</span>');
+          showToast("Один раз на компьютер — дальше этот вопрос не появится", 250, 400);
+        }, 4000);
+      },
+      wait: 6400
+    },
+    {
+      t: "Готово — собран MeetMemo.exe",
+      x: "Дальше всё идёт само: появляется папка <b>dist\\MeetMemo</b> с <b>MeetMemo.exe</b> " +
+         "и ярлыком рядом. Сборка автономная — .NET внутри, поэтому её можно скопировать " +
+         "на другой компьютер и запускать без установок.",
+      run: function () {
+        hideToast();
+        later(function () { termLine(termBody, '<span class="dim">Сборка MeetMemo 0.1.0…</span>'); }, 600);
+        later(function () { termLine(termBody, '<span class="dim">Упаковка автономной версии…</span>'); }, 1600);
+        later(function () {
+          termLine(termBody, '<span class="ok">Готово: dist\\MeetMemo\\MeetMemo.exe</span>');
+        }, 2700);
+      },
+      wait: 5000
+    },
+    {
+      t: "Запускаем приложение",
+      x: "Собранное приложение лежит в <b>dist\\MeetMemo\\MeetMemo.exe</b> — рядом с ним " +
+         "создан ярлык <b>dist\\MeetMemo.lnk</b>, его удобно вынести на рабочий стол. " +
+         "Окна не появится: MeetMemo живёт значком в трее, справа внизу.",
+      run: function () {
+        hideToast();
+        buildWin.classList.remove("show");
+        distWin.classList.add("show");
+        moveTo(430, 330);
+        later(function () { moveToEl(flExe); }, 900);
+        later(function () {
+          flExe.classList.add("pick");
+          showToast("Запускаем MeetMemo.exe", 250, 400);
+        }, 1900);
+        later(function () { click(); }, 2800);
+      },
+      wait: 4800
+    },
+    {
+      t: "Первый запуск — качаем модели",
+      x: "Приложение само предложит загрузить модели распознавания русской речи. " +
+         "Это <b>единственный раз, когда нужен интернет</b>: дальше вся расшифровка идёт " +
+         "на вашем компьютере. Считает <b>процессор</b> — видеокарта не нужна, " +
+         "распознавание занимает два потока и спокойно работает фоном во время встречи.",
+      run: function () {
+        hideToast();
+        flExe.classList.remove("pick");
+        distWin.classList.remove("show");
+        modelsWin.classList.add("show");
+        moveToEl($("dlBtn"));
+        later(function () { click(); dlFill.classList.add("go"); }, 1100);
+        later(function () {
+          showToast("Модели лежат в папке models и больше не скачиваются", 250, 380);
+        }, 3400);
+      },
+      wait: 5600
+    },
+    {
+      t: "Запускаем MeetMemo",
+      x: "Приложение не открывает окон — оно живёт значком в области уведомлений, справа внизу. " +
+         "Пока значок серый, ничего не записывается.",
+      run: function () {
+        hideToast();
+        modelsWin.classList.remove("show");
+        dtZip.classList.remove("show"); dtFolder.classList.remove("show");
+        moveTo(430, 380);
+        later(function () {
+          trayIcon.classList.add("on", "hl");
+          showToast("Значок MeetMemo появился в трее", 700, 470);
+        }, 700);
+      },
+      wait: 3400
+    },
+    {
+      t: "Открываем меню значка",
+      x: "Нажимаем на значок правой кнопкой. Отсюда начинается запись — и обычной встречи, " +
+         "и всего звука системы, если встреча идёт в браузере.",
+      run: function () {
+        hideToast();
+        trayIcon.classList.remove("hl");
+        moveToEl(trayIcon);
+        later(function () { click(); trayMenu.classList.add("show"); }, 1000);
+      },
+      wait: 3200
+    },
+    {
+      t: "Открываем «Приложения и параметры записи»",
+      x: "Появится список окон, открытых на компьютере. Здесь настраивают, с какими " +
+         "приложениями работает MeetMemo и как пишется звук. Сама запись отсюда не начинается.",
+      run: function () {
+        moveToEl($("tmNew"));
+        later(function () {
+          click();
+          trayMenu.classList.remove("show");
+          pickWin.classList.add("show");
+        }, 900);
+      },
+      wait: 3000
+    },
+    {
+      t: "Отмечаем приложения для стенографии",
+      x: "Галочка «Вести» говорит MeetMemo: с этим приложением я работаю постоянно. " +
+         "В заголовках его окон появится кнопка записи, и каждый раз искать приложение в трее не придётся.",
+      run: function () {
+        moveToEl(cbx1);
+        later(function () { click(); cbx1.classList.add("on"); }, 900);
+        later(function () { moveToEl(cbx2); }, 1500);
+        later(function () {
+          click(); cbx2.classList.add("on");
+          showToast("Отмечено: видеоконференция и браузер", 300, 396);
+        }, 2400);
+      },
+      wait: 4600
+    },
+    {
+      t: "Сохраняем — запись пока не начинается",
+      x: "Кнопка <b>«Сохранить»</b> только запоминает отметки и параметры звука. " +
+         "Окно закрывается, встреча идёт своим чередом, а в её заголовке появился серый " +
+         "значок MeetMemo: готов, но не пишет. Запись начинается уже оттуда — так всегда " +
+         "видно, какое именно окно записывается.",
+      run: function () {
+        hideToast();
+        moveToEl($("pickStart"));
+        later(function () {
+          click();
+          pickWin.classList.remove("show");
+          meetWin.classList.add("show");
+        }, 900);
+        later(function () {
+          mmBadge.classList.add("hl");
+          showToast("Значок встроился в заголовок чужого окна", 380, 120);
+        }, 1700);
+      },
+      wait: 4200
+    },
+    {
+      t: "Наводим курсор на значок",
+      x: "Значок маленький и не мешает работе. Управление появляется, только когда " +
+         "наводишь на него курсор.",
+      run: function () {
+        hideToast();
+        mmBadge.classList.remove("hl");
+        moveToEl(mmBadge);
+        later(function () { mmPanel.classList.add("open"); }, 1000);
+      },
+      wait: 3000
+    },
+    {
+      t: "Нажимаем «Записать»",
+      x: "Отдельное окно не появляется — управление остаётся в заголовке. " +
+         "Значок краснеет, в трее тоже: скрытой записи в приложении нет.",
+      run: function () {
+        moveToEl(mmRecBtn);
+        later(function () {
+          click();
+          mmBadge.classList.add("rec"); trayIcon.classList.add("rec");
+          mmRecBtn.textContent = "Стоп"; mmRecBtn.classList.add("stop");
+          mmPauseBtn.hidden = false; mmImpBtn.hidden = false;
+          mmShot.classList.add("on");
+          mmTime.textContent = "00:00:00"; runClock(0);
+          tileA.classList.add("speaking");
+        }, 1000);
+      },
+      wait: 3400
+    },
+    {
+      t: "Говорят коллеги — пишется звук приложения",
+      x: "Речь из окна встречи распознаётся на вашем компьютере и сразу дозаписывается в файл. " +
+         "Такие реплики помечены как «встреча».",
+      run: function () {
+        liveStrip.classList.add("show");
+        addLine("app", "00:41", "давайте определимся со сроками релиза");
+        later(function () {
+          tileA.classList.remove("speaking"); tileB.classList.add("speaking");
+          addLine("app", "01:05", "тестирование не успеваем закончить к среде");
+        }, 2200);
+      },
+      wait: 5000
+    },
+    {
+      t: "Говорите вы — это отдельная дорожка",
+      x: "Ваш микрофон пишется независимо от звука встречи. Поэтому система точно знает, " +
+         "какие слова ваши, — и в мемо поручения не путаются между участниками.",
+      run: function () {
+        tileB.classList.remove("speaking");
+        tileYou.classList.add("speaking");
+        addLine("mic", "01:28", "предлагаю перенести релиз на пятнадцатое");
+        later(function () {
+          showToast("<b>Ваш голос записывается и распознаётся отдельно.</b> " +
+                    "Это и позволяет различать роли в мемо.", 724, 236);
+        }, 700);
+        later(function () {
+          addLine("mic", "01:52", "отчёт по тестированию подготовлю к пятнице");
+        }, 2600);
+      },
+      wait: 6000
+    },
+    {
+      t: "Приложение само делает снимки",
+      x: "Докладчик переключает слайд — картинка в окне заметно меняется, и MeetMemo " +
+         "сохраняет кадр сам. Снимается только выбранное окно, остальной экран не трогается. " +
+         "Одинаковые кадры отсеиваются: пока картинка та же, снимков не будет.",
+      run: function () {
+        hideToast();
+        tileYou.classList.remove("speaking");
+        later(function () {
+          slide.classList.add("flip");
+          showToast("Докладчик переключил слайд", 724, 300);
+        }, 900);
+        // Снимок — уже после того, как смена слайда стала видна: иначе причина не читается.
+        later(function () {
+          flash.classList.remove("go"); void flash.offsetWidth; flash.classList.add("go");
+          showToast("Картинка изменилась — кадр сохранён сам", 724, 300);
+        }, 2400);
+        // Подсказка-переход к следующему шагу: кнопку заодно подсвечиваем.
+        later(function () {
+          mmShot.classList.add("hl");
+          showToast("Или снимите окно вручную — <b>кнопкой рядом со значком MeetMemo</b>",
+                    560, 110);
+        }, 4200);
+      },
+      wait: 7000
+    },
+    {
+      t: "Снимок можно сделать и вручную",
+      x: "Если нужно зафиксировать момент прямо сейчас — вот эта кнопка рядом со значком. " +
+         "Разворачивать панель не нужно, она всегда под рукой во время записи.",
+      run: function () {
+        hideToast();
+        mmShot.classList.add("hl");
+        moveToEl(mmShot);
+        later(function () {
+          click();
+          flash.classList.remove("go"); void flash.offsetWidth; flash.classList.add("go");
+          addLine("app", "02:20", "смотрите на график по срокам");
+        }, 1200);
+        later(function () { mmShot.classList.remove("hl"); }, 2600);
+      },
+      wait: 4600
+    },
+    {
+      t: "Встреча закончилась — «Стоп»",
+      x: "Запись останавливается, файлы дописываются на диск. Стенограмма к этому моменту " +
+         "уже готова: она велась всю встречу, а не считалась в конце.",
+      run: function () {
+        moveToEl(mmRecBtn);
+        later(function () {
+          click(); stopClock();
+          mmBadge.classList.remove("rec"); trayIcon.classList.remove("rec");
+          mmShot.classList.remove("on"); mmPanel.classList.remove("open");
+          liveStrip.classList.remove("show");
+          [tileA, tileB, tileYou].forEach(function (t) { t.classList.remove("speaking"); });
+        }, 1000);
+      },
+      wait: 3200
+    },
+    {
+      t: "Что получилось",
+      x: "Папка встречи: стенограмма с пометкой, кто говорил, снимки и параметры записи. " +
+         "Все форматы открытые — файлы читаются без MeetMemo.",
+      run: function () { cardWin.classList.add("show"); moveTo(560, 300); },
+      wait: 4600
+    },
+    {
+      t: "Собираем архив",
+      x: "Перед сборкой видно, что именно в него попадёт, — можно убрать лишнее. " +
+         "Получается обычный ZIP: его можно отдать коллеге, положить в задачу или сохранить " +
+         "на будущее. Приложение только создаёт файл и никуда его не отправляет.",
+      run: function () {
+        moveToEl($("zipBtn"));
+        later(function () { click(); }, 1000);
+        later(function () {
+          cardWin.classList.remove("show");
+          // Встреча закончилась — её окно закрываем, иначе архив «висит» поверх чужого окна.
+          meetWin.classList.remove("show");
+          zip.classList.add("show");
+          showToast("Архив сохранён — обычный файл на диске", 170, 330);
+        }, 1900);
+      },
+      wait: 4600
+    },
+    {
+      t: "Отправляете архив — сами",
+      x: "Это единственный момент, когда данные покидают компьютер, и происходит он по вашей команде. " +
+         "<b>Писать запрос не нужно</b> — просто приложите архив и отправьте. Внутри лежит файл " +
+         "<b>!ИНСТРУКЦИЯ_ДЛЯ_CLAUDE.md</b> с правилами: модель прочитает его и поймёт, что делать. " +
+         "<b>Именно Claude не обязателен</b> — подойдёт любая модель, принимающая файлы: " +
+         "внутри архива только открытые форматы.",
+      run: function () {
+        hideToast();
+        claudeWin.classList.add("show");
+        // Перетаскиваем архив с рабочего стола: курсор ведёт его в окно Claude.
+        moveToEl(zip, 0.5, 0.3);
+        later(function () { zip.classList.add("fly"); moveTo(820, 250); }, 900);
+        later(function () { clUser.classList.add("go"); }, 2200);
+        later(function () {
+          showToast("Внутри архива: данные встречи <b>плюс правила обработки</b>", 300, 470);
+        }, 2800);
+      },
+      wait: 5800
+    },
+    {
+      t: "На выходе — Word и разобранная стенограмма",
+      /* Показываем результат на примере Claude, но оговариваем, что модель может быть любой. */
+      x: "Мемо приходит документом <b>memo.docx</b>: решения и поручения с таймкодами, " +
+         "«не определён» вместо догадки об исполнителе. Рядом <b>transcript_clean.md</b> — " +
+         "вся речь целиком, разбитая по темам и по говорящим, с отдельным разделом «Спорные места»: " +
+         "видно, что распозналось надёжно, а что стоит перепроверить.",
+      run: function () {
+        hideToast();
+        zip.classList.remove("show");
+        clBot.classList.add("go");
+      },
+      wait: 5600
+    },
+    {
+      t: "Приятного пользования",
+      x: "Вот и весь путь: скачали, собрали, записали, получили мемо. " +
+         "И главное — <b>предупреждайте коллег о записи и спрашивайте разрешения</b>. " +
+         "Не забывайте об этом: во многих случаях это ещё и требование закона. " +
+         "MeetMemo помогает: во время записи всегда виден красный значок — и в заголовке окна, " +
+         "и в трее. Скрытой записи в приложении нет.",
+      run: function () {
+        showToast("Предупредите участников <b>до начала записи</b> — и спросите согласия",
+                  330, 240);
+        moveTo(500, 300);
+      },
+      wait: 6000
+    }
+  ];
+
+  const LABELS = ["GitHub", "Распаковка", "publish.cmd", "Библиотеки", "Сборка",
+                  "MeetMemo.exe", "Модели", "Трей", "Меню", "Параметры", "Отметки",
+                  "Сохранение", "Наведение", "Запись", "Коллеги", "Ваш голос", "Автоснимок",
+                  "Снимок вручную", "Стоп", "Пакет", "Архив", "Передача", "Мемо",
+                  "Напутствие"];
+
+  function setStep(i) {
+    Array.prototype.forEach.call(stepList.children, function (li, k) {
+      li.setAttribute("aria-current", k === i ? "true" : "false");
+    });
+    if (i >= 0) {
+      expNum.textContent = i + 1;
+      expTitle.textContent = SCENE[i].t;
+      expText.innerHTML = SCENE[i].x;
+    }
+  }
+
+  LABELS.forEach(function (name, i) {
+    const li = document.createElement("li");
+    li.textContent = (i + 1) + ". " + name;
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.addEventListener("click", function () { jumpTo(i); });
+    li.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jumpTo(i); }
+    });
+    stepList.appendChild(li);
+  });
+
+  function playFrom(index) {
+    running = true;
+    playIcon.textContent = "■"; playLabel.textContent = "Остановить";
+    let i = index;
+    (function next() {
+      if (i >= SCENE.length) {
+        running = false;
+        playIcon.textContent = "▶"; playLabel.textContent = "Смотреть заново";
+        return;
+      }
+      const step = SCENE[i];
+      setStep(i);
+      step.run();
+      i += 1;
+      later(next, step.wait);
+    })();
+  }
+
+  function jumpTo(index) {
+    reset();
+    instant = true;
+    // Переходы на время перемотки выключены: иначе замер положения кнопки попадёт
+    // в середину анимации панели, и курсор поедет к тому месту, где её уже нет.
+    stage.classList.add("noanim");
+    try { for (let k = 0; k < index; k++) SCENE[k].run(); }
+    finally {
+      instant = false;
+      void stage.offsetWidth;
+      stage.classList.remove("noanim");
+    }
+    hideToast();
+    /* Шаги с 13-го («Запись») по 18-й («Стоп») идут при работающем таймере */
+    if (index >= 13 && index <= 18) { stopClock(); runClock((index - 12) * 14); }
+    playFrom(index);
+  }
+
+  playBtn.addEventListener("click", function () {
+    if (running) {
+      clearAll(); stopClock(); running = false;
+      playIcon.textContent = "▶"; playLabel.textContent = "Смотреть заново";
+    } else { reset(); playFrom(0); }
+  });
+
+  fit(); syncCursorSpeed(); reset(); setStep(0);
+
+  const io = new IntersectionObserver(function (entries) {
+    if (!entries.some(function (e) { return e.isIntersecting; })) return;
+    io.disconnect();
+    if (!running) later(function () { playFrom(0); }, 500);
+  }, { threshold: 0.3 });
+  io.observe(stage);
+})();
+</script>
