@@ -1,0 +1,22 @@
+# Единые окончания строк: без этого файла у каждого, кто клонирует репозиторий,
+# появляются «изменения» во всех файлах сразу после checkout.
+* text=auto eol=lf
+
+# cmd.exe читает .bat и .cmd построчно и спотыкается на LF — этим файлам нужен CRLF.
+# PowerShell к окончаниям строк равнодушен, но держим рядом для единообразия.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Файлы Visual Studio традиционно CRLF — иначе среда переписывает их при каждом открытии.
+*.sln       text eol=crlf
+*.csproj    text eol=crlf
+*.xaml      text eol=crlf
+
+# Бинарное содержимое: Git не должен пытаться чинить в нём переводы строк
+*.png   binary
+*.ico   binary
+*.docx  binary
+*.wav   binary
+*.flac  binary
+*.onnx  binary
