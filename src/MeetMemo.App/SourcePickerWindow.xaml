@@ -1,7 +1,7 @@
 <Window x:Class="MeetMemo.App.SourcePickerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Новая встреча — выбор источника"
+        Title="MeetMemo — приложения и параметры записи"
         Icon="Assets/app.ico"
         Height="620" Width="820"
         WindowStartupLocation="CenterScreen"
@@ -25,9 +25,9 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0">
-            <TextBlock Text="Выберите окно встречи"
+            <TextBlock Text="Отметьте приложения для стенографии"
                        FontFamily="Segoe UI" FontSize="20" FontWeight="SemiBold" Foreground="#FF1F2937" />
-            <TextBlock Text="Изображение берётся из выбранного окна, звук — из его процесса и дочерних процессов. Отметьте «Вести» у приложений встреч — в заголовках их окон появятся кнопки записи."
+            <TextBlock Text="Галочка «Вести» добавляет кнопки MeetMemo в заголовки окон приложения — запись начинается оттуда. Изображение берётся из выбранного окна, звук — из его процесса и дочерних процессов."
                        Style="{StaticResource Label}" TextWrapping="Wrap" />
             <TextBox x:Name="SearchBox" Margin="0,8,0,8" Padding="6,4"
                      FontFamily="Segoe UI" FontSize="13"
@@ -37,7 +37,7 @@
         <ListView x:Name="WindowList" Grid.Row="1"
                   FontFamily="Segoe UI" FontSize="13"
                   SelectionChanged="OnSelectionChanged"
-                  MouseDoubleClick="OnStartClick">
+                  MouseDoubleClick="OnRowDoubleClick">
             <ListView.View>
                 <GridView>
                     <GridViewColumn Header="Вести" Width="55">
@@ -62,10 +62,6 @@
         </ListView>
 
         <StackPanel Grid.Row="2" Margin="0,12,0,0">
-            <TextBlock Text="Название встречи" Style="{StaticResource Label}" />
-            <TextBox x:Name="TitleBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13"
-                     TextChanged="OnTitleChanged" />
-
             <TextBlock Text="Микрофон" Style="{StaticResource Label}" />
             <ComboBox x:Name="MicrophoneBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13"
                       DisplayMemberPath="Name" />
@@ -90,9 +86,9 @@
                     FontFamily="Segoe UI" FontSize="13" Click="OnRefreshClick" />
             <Button x:Name="CancelButton" Content="Отмена" Padding="14,6" Margin="0,0,8,0"
                     FontFamily="Segoe UI" FontSize="13" IsCancel="True" />
-            <Button x:Name="StartButton" Content="Начать запись" Padding="18,6"
+            <Button x:Name="SaveButton" Content="Сохранить" Padding="18,6"
                     FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
-                    IsDefault="True" Click="OnStartClick" />
+                    IsDefault="True" Click="OnSaveClick" />
         </StackPanel>
     </Grid>
 </Window>

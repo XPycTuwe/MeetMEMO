@@ -42,23 +42,35 @@ public sealed class WindowRow : System.ComponentModel.INotifyPropertyChanged
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
 }
 
+/// <summary>Параметры записи, подтверждённые пользователем в окне настройки.</summary>
+public sealed record RecordingPreferences
+{
+    public required AudioMode AudioMode { get; init; }
+
+    public string? MicrophoneDeviceId { get; init; }
+
+    public required bool SaveAudioFiles { get; init; }
+
+    public required bool AutoScreenshotsEnabled { get; init; }
+}
+
 /// <summary>
-/// Окно выбора источника (ТЗ 6.1). Здесь пользователь подтверждает всё, что влияет
-/// на приватность: какое окно снимается, какой звук пишется и сохраняются ли файлы.
+/// Окно настройки записи (ТЗ 6.1). Здесь пользователь подтверждает всё, что влияет
+/// на приватность: какие приложения ведутся, какой звук пишется и сохраняются ли файлы.
+///
+/// Запись отсюда не начинается: её запускает кнопка в заголовке отмеченного окна — там
+/// видно, какое именно окно пишется. Это окно только сохраняет параметры.
 /// </summary>
 public partial class SourcePickerWindow : Window
 {
     private readonly AppSettings _settings;
     private List<WindowRow> _allRows = new();
-    private bool _titleEditedByUser;
-    private bool _suppressTitleEdit;
 
     public SourcePickerWindow(AppSettings settings)
     {
         InitializeComponent();
         _settings = settings;
 
-        TitleBox.Text = $"Встреча {DateTime.Now:dd.MM.yyyy HH:mm}";
         SaveAudioBox.IsChecked = settings.SaveAudioFiles;
         AutoShotsBox.IsChecked = settings.AutoScreenshots;
 
@@ -76,8 +88,8 @@ public partial class SourcePickerWindow : Window
         LoadWindows();
     }
 
-    /// <summary>Заполненный запрос на старт — читается вызывающим после ShowDialog.</summary>
-    public SessionStartRequest? Result { get; private set; }
+    /// <summary>Подтверждённые параметры — читаются вызывающим после ShowDialog.</summary>
+    public RecordingPreferences? Result { get; private set; }
 
     private void LoadMicrophones()
     {
@@ -163,25 +175,20 @@ public partial class SourcePickerWindow : Window
 
     private void OnSearchChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
 
-    private void OnTitleChanged(object sender, TextChangedEventArgs e)
-    {
-        if (!_suppressTitleEdit) _titleEditedByUser = true;
-    }
-
     private void OnRefreshClick(object sender, RoutedEventArgs e) => LoadWindows();
+
+    /// <summary>
+    /// Двойным щелчком раньше начиналась запись. Теперь строка просто переключает отметку:
+    /// случайный двойной клик по списку не должен запускать запись встречи.
+    /// </summary>
+    private void OnRowDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (WindowList.SelectedItem is WindowRow row) row.IsTracked = !row.IsTracked;
+    }
 
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (WindowList.SelectedItem is not WindowRow row) return;
-
-        // Название следует за выбором окна, пока пользователь не отредактировал его сам:
-        // иначе при смене выбора в названии остаётся заголовок предыдущего окна.
-        if (!_titleEditedByUser)
-        {
-            _suppressTitleEdit = true;
-            TitleBox.Text = row.Title.Length > 60 ? row.Title[..60] : row.Title;
-            _suppressTitleEdit = false;
-        }
 
         // У многопроцессных браузеров изоляция звука идёт по дереву процессов, а не по вкладке:
         // предупредить об этом честнее, чем показывать неожиданный результат в записи.
@@ -203,7 +210,11 @@ public partial class SourcePickerWindow : Window
         WarningText.Visibility = Visibility.Visible;
     }
 
-    private void OnStartClick(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Сохраняем параметры и закрываем окно. Запись не начинаем: её запускают кнопкой
+    /// в заголовке отмеченного окна — так всегда видно, какое окно пишется.
+    /// </summary>
+    private void OnSaveClick(object sender, RoutedEventArgs e)
     {
         var mode = AudioModeBox.SelectedIndex switch
         {
@@ -212,36 +223,12 @@ public partial class SourcePickerWindow : Window
             _ => AudioMode.ApplicationProcessTree
         };
 
-        TargetSelection? target = null;
-        if (WindowList.SelectedItem is WindowRow row)
+        Result = new RecordingPreferences
         {
-            target = new TargetSelection
-            {
-                WindowHandle = row.Candidate.Handle,
-                ProcessId = row.Candidate.ProcessId,
-                ApplicationName = row.Candidate.ProcessName,
-                WindowTitle = row.Candidate.Title,
-                ExecutablePath = row.Candidate.ExecutablePath
-            };
-        }
-        else if (mode != AudioMode.MicrophoneOnly)
-        {
-            ShowWarning("Выберите окно встречи или переключитесь на режим «Только микрофон».");
-            return;
-        }
-
-        var device = MicrophoneBox.SelectedItem as AudioDeviceInfo;
-
-        Result = new SessionStartRequest
-        {
-            Title = string.IsNullOrWhiteSpace(TitleBox.Text) ? "Встреча" : TitleBox.Text.Trim(),
-            MeetingsRoot = _settings.MeetingsRoot,
             AudioMode = mode,
-            MicrophoneDeviceId = device?.Id,
-            MicrophoneDeviceName = device?.Name,
+            MicrophoneDeviceId = (MicrophoneBox.SelectedItem as AudioDeviceInfo)?.Id,
             SaveAudioFiles = SaveAudioBox.IsChecked == true,
-            AutoScreenshotsEnabled = AutoShotsBox.IsChecked == true,
-            Target = target
+            AutoScreenshotsEnabled = AutoShotsBox.IsChecked == true
         };
 
         DialogResult = true;

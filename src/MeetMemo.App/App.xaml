@@ -8,7 +8,7 @@
     <Application.Resources>
         <ResourceDictionary>
             <ContextMenu x:Key="TrayMenu" x:Shared="false">
-                <MenuItem x:Name="NewMeetingItem" Header="Новая встреча"
+                <MenuItem x:Name="NewMeetingItem" Header="Приложения и параметры записи"
                           Click="OnNewMeetingClick" FontWeight="SemiBold" />
                 <MenuItem x:Name="RecordEverythingItem" Header="Записать весь звук системы"
                           Click="OnRecordEverythingClick" />

@@ -170,7 +170,7 @@ public partial class App : Application
             IconSource = LoadIcon("tray-idle.ico")
         };
 
-        _tray.TrayMouseDoubleClick += (_, _) => StartNewMeeting();
+        _tray.TrayMouseDoubleClick += (_, _) => ConfigureRecording();
         UpdateRecentMenu();
     }
 
@@ -205,7 +205,9 @@ public partial class App : Application
             case HotkeyAction.StartStop:
                 if (_controller is null || _controller.State is SessionState.Idle
                     or SessionState.Completed or SessionState.Failed)
-                    StartNewMeeting();
+                    // Пишем то окно, в котором человек сейчас работает: это ровно то же,
+                    // что даёт кнопка в заголовке, только не отрывая рук от клавиатуры.
+                    await StartRecordingForWindowAsync(Capture.Interop.Win32.GetForegroundWindow());
                 else
                     await _controller.SendAsync(new SessionCommand.Stop());
                 break;
@@ -231,7 +233,7 @@ public partial class App : Application
         }
     }
 
-    private void OnNewMeetingClick(object sender, RoutedEventArgs e) => StartNewMeeting();
+    private void OnNewMeetingClick(object sender, RoutedEventArgs e) => ConfigureRecording();
 
     /// <summary>
     /// Запись всего, что звучит в системе, без привязки к окну.
@@ -290,16 +292,13 @@ public partial class App : Application
         }
     }
 
-    private async void StartNewMeeting()
+    /// <summary>
+    /// Настройка записи: какие приложения ведём и как пишем звук. Саму запись отсюда
+    /// не запускаем — для этого есть кнопка в заголовке отмеченного окна.
+    /// </summary>
+    private async void ConfigureRecording()
     {
-        if (_controller is not null && _controller.State is SessionState.Recording
-            or SessionState.Paused or SessionState.Starting)
-        {
-            _tray?.ShowBalloonTip("MeetMemo", "Запись уже идёт", BalloonIcon.Info);
-            return;
-        }
-
-        // Без моделей живой стенограммы не будет — предупреждаем до старта, а не после.
+        // Без моделей живой стенограммы не будет — предупреждаем заранее, а не в момент записи.
         var models = new ModelManager(_settings.ModelsRoot);
         if (models.GetMissing().Count > 0)
         {
@@ -320,23 +319,31 @@ public partial class App : Application
         _picker = new SourcePickerWindow(_settings);
         _picker.TrackedAppsChanged += OnTrackedAppChanged;
         var dialogResult = _picker.ShowDialog();
-        var request = _picker.Result;
+        var preferences = _picker.Result;
         _picker.TrackedAppsChanged -= OnTrackedAppChanged;
         _picker = null;
 
-        if (dialogResult != true || request is null) return;
+        if (dialogResult != true || preferences is null) return;
 
-        // Запоминаем выбор пользователя для следующей встречи.
         _settings = _settings with
         {
-            MicrophoneDeviceId = request.MicrophoneDeviceId,
-            AudioMode = request.AudioMode,
-            SaveAudioFiles = request.SaveAudioFiles,
-            AutoScreenshots = request.AutoScreenshotsEnabled
+            MicrophoneDeviceId = preferences.MicrophoneDeviceId,
+            AudioMode = preferences.AudioMode,
+            SaveAudioFiles = preferences.SaveAudioFiles,
+            AutoScreenshots = preferences.AutoScreenshotsEnabled
         };
         await _settings.SaveAsync();
 
-        await StartSessionAsync(request);
+        // Подсказываем, где теперь начинается запись: кнопка «Сохранить» её не запускает,
+        // и без пояснения человек ждёт старта, которого не будет.
+        _tray?.ShowBalloonTip(
+            "MeetMemo",
+            _settings.TrackedApps.Count > 0
+                ? "Параметры сохранены. Запись начинается кнопкой «Записать» в заголовке "
+                  + "отмеченного окна."
+                : "Параметры сохранены. Отметьте приложение галочкой «Вести», чтобы в заголовке "
+                  + "его окон появилась кнопка записи.",
+            BalloonIcon.Info);
     }
 
     /// <summary>
@@ -445,6 +452,13 @@ public partial class App : Application
 
     /// <summary>Кнопка «Записать» в заголовке окна: сразу начинаем встречу именно с этим окном.</summary>
     private async void OnOverlayRecordRequested(TitleBarOverlay overlay)
+        => await StartRecordingForWindowAsync(overlay.TargetWindow);
+
+    /// <summary>
+    /// Единственный путь к записи встречи: и кнопка в заголовке, и горячая клавиша ведут сюда.
+    /// Параметры берутся из настроек — их задают в окне «Приложения и параметры записи».
+    /// </summary>
+    private async Task StartRecordingForWindowAsync(nint window)
     {
         if (_controller is not null && _controller.State is SessionState.Recording
             or SessionState.Paused or SessionState.Starting)
@@ -466,11 +480,13 @@ public partial class App : Application
         }
 
         var candidate = WindowEnumerator.Enumerate()
-            .FirstOrDefault(w => w.Handle == overlay.TargetWindow);
+            .FirstOrDefault(w => w.Handle == window);
 
         if (candidate is null)
         {
-            _tray?.ShowBalloonTip("MeetMemo", "Окно больше недоступно", BalloonIcon.Warning);
+            _tray?.ShowBalloonTip("MeetMemo",
+                "Это окно записать нельзя. Откройте окно встречи и нажмите «Записать» в его заголовке.",
+                BalloonIcon.Warning);
             return;
         }
 
@@ -799,7 +815,7 @@ public partial class App : Application
 
         var newMeeting = _tray.ContextMenu.Items
             .OfType<MenuItem>()
-            .FirstOrDefault(i => (i.Header as string) == "Новая встреча");
+            .FirstOrDefault(i => (i.Header as string) == "Приложения и параметры записи");
         if (newMeeting is not null) newMeeting.IsEnabled = !recording;
 
         var everything = _tray.ContextMenu.Items
