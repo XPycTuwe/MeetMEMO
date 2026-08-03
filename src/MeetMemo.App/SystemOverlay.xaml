@@ -1,0 +1,99 @@
+<Window x:Class="MeetMemo.App.SystemOverlay"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MeetMemo"
+        SizeToContent="WidthAndHeight"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        MouseLeftButtonDown="OnDragStart">
+    <!-- Индикатор записи всей системы. Окна-цели у такой записи нет, поэтому значок
+         не привязан к заголовку, а свободно плавает поверх экрана и перетаскивается. -->
+    <Window.Resources>
+        <Style TargetType="Button" x:Key="BarButton">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="Margin" Value="2,0,0,0" />
+            <Setter Property="Background" Value="#E62E74B5" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="3" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF1D5A94" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="#F21F2937" CornerRadius="6" Padding="6,4">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+            <!-- Индикатор состояния: пульсирует во время записи -->
+            <Grid Width="18" Height="18" Margin="2,0,6,0">
+                <Ellipse x:Name="StatusDot" Width="12" Height="12" Fill="#FFE53935" />
+            </Grid>
+
+            <TextBlock x:Name="TimerText" Text="00:00:00"
+                       FontFamily="Consolas" FontSize="13" Foreground="White"
+                       VerticalAlignment="Center" Margin="0,0,8,0" />
+
+            <!-- Снимок рабочего стола вынесен наружу: во время записи всей системы
+                 это единственный доступный вид снимка и самое частое действие -->
+            <Button x:Name="DesktopShotButton" Click="OnDesktopShotClick"
+                    Focusable="False" Margin="0,0,2,0" Padding="0" BorderThickness="0"
+                    Background="Transparent" ToolTip="Снимок всего рабочего стола">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="DsBd" Background="#E62E74B5" CornerRadius="4"
+                                Width="26" Height="24">
+                            <Canvas Width="16" Height="14" HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                <!-- Монитор: экран на подставке -->
+                                <Path Fill="White"
+                                      Data="M1,1 L15,1 A1,1 0 0 1 16,2 L16,10 A1,1 0 0 1 15,11
+                                            L1,11 A1,1 0 0 1 0,10 L0,2 A1,1 0 0 1 1,1 Z" />
+                                <Rectangle Canvas.Left="1.5" Canvas.Top="2.5" Width="13" Height="7"
+                                           Fill="#FF2E74B5" />
+                                <Rectangle Canvas.Left="5" Canvas.Top="11.5" Width="6" Height="2"
+                                           Fill="White" />
+                            </Canvas>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="DsBd" Property="Background" Value="#FF1D5A94" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+            <Button x:Name="PauseButton" Content="Пауза"
+                    Style="{StaticResource BarButton}" Click="OnPauseClick" />
+            <Button x:Name="ImportantButton" Content="Важно"
+                    Style="{StaticResource BarButton}" Click="OnImportantClick" />
+            <Button x:Name="StopButton" Content="■ Стоп" Background="#E6B91C1C"
+                    Style="{StaticResource BarButton}" Click="OnStopClick" />
+
+            <TextBlock x:Name="LiveText" Text="" Visibility="Collapsed"
+                       FontFamily="Segoe UI" FontSize="11" Foreground="#FF9CA3AF"
+                       VerticalAlignment="Center" Margin="8,0,4,0"
+                       MaxWidth="240" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+    </Border>
+</Window>

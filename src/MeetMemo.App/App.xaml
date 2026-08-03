@@ -1,0 +1,32 @@
+<Application x:Class="MeetMemo.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:tb="http://www.hardcodet.net/taskbar"
+             ShutdownMode="OnExplicitShutdown"
+             Startup="OnStartup"
+             Exit="OnExit">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ContextMenu x:Key="TrayMenu" x:Shared="false">
+                <MenuItem x:Name="NewMeetingItem" Header="Новая встреча"
+                          Click="OnNewMeetingClick" FontWeight="SemiBold" />
+                <MenuItem x:Name="RecordEverythingItem" Header="Записать весь звук системы"
+                          Click="OnRecordEverythingClick" />
+                <!-- Управление записью из трея нужно, когда окна-цели нет: при записи
+                     всей системы значок в заголовке негде показать -->
+                <MenuItem x:Name="StopRecordingItem" Header="Остановить запись"
+                          Click="OnStopRecordingClick" Visibility="Collapsed" />
+                <MenuItem x:Name="DesktopShotItem" Header="Снимок экрана"
+                          Click="OnDesktopShotClick" Visibility="Collapsed" />
+                <Separator />
+                <MenuItem x:Name="RecentItem" Header="Последние встречи" />
+                <MenuItem Header="Открыть папку встреч" Click="OnOpenMeetingsRootClick" />
+                <Separator />
+                <MenuItem Header="Проверить модели распознавания" Click="OnCheckModelsClick" />
+                <MenuItem Header="О программе" Click="OnAboutClick" />
+                <Separator />
+                <MenuItem Header="Выход" Click="OnExitClick" />
+            </ContextMenu>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

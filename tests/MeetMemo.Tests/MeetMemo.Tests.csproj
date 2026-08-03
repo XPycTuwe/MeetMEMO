@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MeetMemo.Contracts\MeetMemo.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\MeetMemo.Core\MeetMemo.Core.csproj" />
+    <ProjectReference Include="..\..\src\MeetMemo.Storage\MeetMemo.Storage.csproj" />
+    <ProjectReference Include="..\..\src\MeetMemo.Audio\MeetMemo.Audio.csproj" />
+    <ProjectReference Include="..\..\src\MeetMemo.Asr\MeetMemo.Asr.csproj" />
+    <ProjectReference Include="..\..\src\MeetMemo.Export\MeetMemo.Export.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+</Project>

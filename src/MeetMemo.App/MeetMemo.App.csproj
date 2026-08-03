@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Иконка exe: видна в проводнике, панели задач и переключателе окон.
+         Собирается из ico.png скриптом tools/make-icons.ps1 -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <AssemblyName>MeetMemo</AssemblyName>
+    <RootNamespace>MeetMemo.App</RootNamespace>
+    <!-- Приложение живёт в трее: консольного окна быть не должно -->
+    <UseWindowsForms>false</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MeetMemo.Contracts\MeetMemo.Contracts.csproj" />
+    <ProjectReference Include="..\MeetMemo.Core\MeetMemo.Core.csproj" />
+    <ProjectReference Include="..\MeetMemo.Storage\MeetMemo.Storage.csproj" />
+    <ProjectReference Include="..\MeetMemo.Audio\MeetMemo.Audio.csproj" />
+    <ProjectReference Include="..\MeetMemo.Capture\MeetMemo.Capture.csproj" />
+    <ProjectReference Include="..\MeetMemo.Asr\MeetMemo.Asr.csproj" />
+    <ProjectReference Include="..\MeetMemo.Export\MeetMemo.Export.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Иконки трея загружаются по пути во время выполнения -->
+    <Content Include="Assets\*.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Та же иконка нужна как ресурс: окна берут её через Icon="Assets/app.ico" -->
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hardcodet.NotifyIcon.Wpf" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>
