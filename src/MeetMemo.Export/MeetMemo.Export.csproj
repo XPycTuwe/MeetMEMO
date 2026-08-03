@@ -9,4 +9,17 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
+  <!--
+    Шаблон скилла вшивается в сборку, а не копируется файлами рядом с exe: в дистрибутиве
+    dist\MeetMemo\ папки skill нет, а правила обработки обязаны попадать в каждый архив.
+    После правки файлов в skill\meeting-memo проект нужно пересобрать.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\skill\meeting-memo\SKILL.md"
+                      LogicalName="MeetMemo.Export.SkillTemplate.SKILL.md" />
+    <EmbeddedResource Include="..\..\skill\meeting-memo\references\quality-checklist.md"
+                      LogicalName="MeetMemo.Export.SkillTemplate.quality-checklist.md" />
+    <EmbeddedResource Include="..\..\skill\meeting-memo\references\memo-example.md"
+                      LogicalName="MeetMemo.Export.SkillTemplate.memo-example.md" />
+  </ItemGroup>
 </Project>

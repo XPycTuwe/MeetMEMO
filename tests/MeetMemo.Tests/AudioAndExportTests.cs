@@ -204,6 +204,31 @@ public class ExportTests
         // Аудио по умолчанию не выгружается.
         Assert.DoesNotContain(names, n => n.Contains("microphone.wav"));
     }
+
+    [Fact]
+    public async Task Правила_обработки_вложены_в_архив()
+    {
+        using var dir = new TempDir();
+        var folder = CreatePackage(dir.Path);
+
+        var plan = ExportPlanBuilder.Build(folder);
+        var archivePath = Path.Combine(dir.Path, "package.zip");
+        await new ZipPackager().CreateAsync(plan, archivePath);
+
+        using var archive = System.IO.Compression.ZipFile.OpenRead(archivePath);
+        var rules = archive.GetEntry(SkillTemplate.FileName);
+        Assert.NotNull(rules);
+
+        using var reader = new StreamReader(rules!.Open(), System.Text.Encoding.UTF8);
+        var text = await reader.ReadToEndAsync();
+
+        // Ключевые запреты должны доехать до получателя целиком, а не остаться ссылкой на скилл.
+        Assert.Contains("не определён", text);
+        Assert.Contains("Приложение А", text);
+        Assert.Contains("Приложение Б", text);
+        // YAML-заголовок скилла внутри архива только мешает читателю.
+        Assert.DoesNotContain("name: meeting-memo", text);
+    }
 }
 
 public class TranscriptRendererTests

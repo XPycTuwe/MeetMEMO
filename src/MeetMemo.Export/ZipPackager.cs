@@ -70,6 +70,7 @@ public sealed class ZipPackager
                 }
 
                 await AddReadmeAsync(archive, plan, ct).ConfigureAwait(false);
+                await AddSkillAsync(archive, ct).ConfigureAwait(false);
             }
 
             if (File.Exists(archivePath)) File.Delete(archivePath);
@@ -108,8 +109,10 @@ public sealed class ZipPackager
         await writer.WriteLineAsync("# Пакет встречи MeetMemo").ConfigureAwait(false);
         await writer.WriteLineAsync().ConfigureAwait(false);
         await writer.WriteLineAsync(
-            "Загрузите этот архив в Claude и попросите подготовить мемо — обработку выполняет "
-            + "Skill `meeting-memo`.").ConfigureAwait(false);
+            "Загрузите этот архив в Claude и попросите подготовить мемо. Устанавливать ничего "
+            + "не нужно: правила обработки лежат прямо здесь, в файле `"
+            + SkillTemplate.FileName + "` — Claude прочитает его и сделает мемо по ним.")
+            .ConfigureAwait(false);
         await writer.WriteLineAsync().ConfigureAwait(false);
         await writer.WriteLineAsync("## Что внутри").ConfigureAwait(false);
         await writer.WriteLineAsync().ConfigureAwait(false);
@@ -117,9 +120,12 @@ public sealed class ZipPackager
         await writer.WriteLineAsync("- `timeline.jsonl` — события с таймкодами;").ConfigureAwait(false);
         await writer.WriteLineAsync("- `transcript.jsonl` / `transcript.md` — стенограмма;").ConfigureAwait(false);
         await writer.WriteLineAsync("- `glossary.md` — словарь терминов встречи;").ConfigureAwait(false);
-        await writer.WriteLineAsync("- `screenshots/` — снимки экрана и их индекс.").ConfigureAwait(false);
+        await writer.WriteLineAsync("- `screenshots/` — снимки экрана и их индекс;").ConfigureAwait(false);
         if (plan.ContainsAudio)
-            await writer.WriteLineAsync("- `audio/` — исходные аудиодорожки.").ConfigureAwait(false);
+            await writer.WriteLineAsync("- `audio/` — исходные аудиодорожки;").ConfigureAwait(false);
+        await writer.WriteLineAsync(
+            "- `" + SkillTemplate.FileName + "` — правила, по которым собирается мемо.")
+            .ConfigureAwait(false);
         await writer.WriteLineAsync().ConfigureAwait(false);
         await writer.WriteLineAsync("## Важно").ConfigureAwait(false);
         await writer.WriteLineAsync().ConfigureAwait(false);
@@ -128,6 +134,27 @@ public sealed class ZipPackager
             + "словах, окончаниях, фамилиях и терминах, а знаки препинания могут отсутствовать. "
             + "Это не дословный протокол: спорные места нужно проверять по исходному аудио.")
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Правила обработки пакета едут вместе с данными: получателю архива не нужно ничего
+    /// доустанавливать, чтобы мемо собралось по тем же правилам (см. <see cref="SkillTemplate"/>).
+    /// </summary>
+    private async Task AddSkillAsync(ZipArchive archive, CancellationToken ct)
+    {
+        try
+        {
+            var entry = archive.CreateEntry(SkillTemplate.FileName, CompressionLevel.Optimal);
+            await using var stream = entry.Open();
+            await using var writer = new StreamWriter(stream, new UTF8Encoding(false));
+            await writer.WriteAsync(SkillTemplate.Build().AsMemory(), ct).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Отсутствие шаблона не повод терять уже собранные данные встречи:
+            // архив без правил остаётся полностью пригодным, просто мемо выйдет менее строгим.
+            _log.LogWarning(ex, "Правила обработки не вложены в архив");
+        }
     }
 
     /// <summary>Журнал экспорта — чтобы пользователь всегда мог посмотреть, что и когда выгружалось.</summary>
