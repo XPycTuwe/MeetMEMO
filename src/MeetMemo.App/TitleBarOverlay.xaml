@@ -47,10 +47,10 @@
         </Style>
     </Window.Resources>
 
-    <!-- DockPanel, а не StackPanel: кнопки закреплены у правого края и не двигаются,
-         а строка стенограммы занимает оставшееся место слева и обрезается. В StackPanel
-         растущий текст выталкивал кнопки за пределы окна. -->
-    <DockPanel x:Name="ContentRoot" Background="{x:Null}" LastChildFill="True">
+    <!-- LastChildFill обязательно False: иначе единственный ребёнок растягивается на всю
+         ширину окна, его содержимое прижимается влево, и разворот управления начинает
+         толкать значок вправо. Значок должен стоять на одном месте всегда. -->
+    <DockPanel x:Name="ContentRoot" Background="{x:Null}" LastChildFill="False">
 
         <StackPanel x:Name="ButtonsPanel" DockPanel.Dock="Right" Orientation="Horizontal"
                     VerticalAlignment="Center" Background="{x:Null}">
@@ -120,15 +120,7 @@
             </Grid>
         </StackPanel>
 
-        <!-- Последняя распознанная реплика занимает то, что осталось слева от кнопок,
-             и обрезается по краю окна. Кнопки от её длины не сдвигаются. -->
-        <Border x:Name="LivePanel" Visibility="Collapsed"
-                Background="#F21F2937" CornerRadius="4" Padding="6,2" Margin="0,0,4,0"
-                VerticalAlignment="Center" HorizontalAlignment="Right">
-            <TextBlock x:Name="LiveText" Text=""
-                       FontFamily="Segoe UI" FontSize="11" Foreground="#FF9CA3AF"
-                       VerticalAlignment="Center"
-                       TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-        </Border>
+        <!-- Здесь была строка распознанной речи. Она уползала влево по чужому заголовку
+             и мешала самому заголовку; теперь стенограмма видна в субтитрах внизу экрана. -->
     </DockPanel>
 </Window>

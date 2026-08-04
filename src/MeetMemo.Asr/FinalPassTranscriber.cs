@@ -119,11 +119,28 @@ public sealed class FinalPassTranscriber
             throw new InvalidOperationException(
                 "Финальный проход требует сохранённого аудио, а в этой сессии оно не писалось");
 
+        // Дорожки могли быть сжаты в MP3 ради места. Whisper читает только WAV, поэтому
+        // сжатые разворачиваем во временный файл и удаляем его сразу после прохода.
+        var temporaries = new List<string>();
+
         var sources = new List<(string Path, AudioChannel Channel)>();
-        if (File.Exists(folder.MicrophoneAudio()))
-            sources.Add((folder.MicrophoneAudio(), AudioChannel.Microphone));
-        if (File.Exists(folder.ApplicationAudio()))
-            sources.Add((folder.ApplicationAudio(), AudioChannel.Application));
+        foreach (var (wav, mp3, channel) in new[]
+                 {
+                     (folder.MicrophoneAudio(), folder.MicrophoneAudio("mp3"), AudioChannel.Microphone),
+                     (folder.ApplicationAudio(), folder.ApplicationAudio("mp3"), AudioChannel.Application)
+                 })
+        {
+            if (File.Exists(wav))
+            {
+                sources.Add((wav, channel));
+            }
+            else if (File.Exists(mp3))
+            {
+                var decoded = Audio.AudioCompressor.DecodeToTempWav(mp3);
+                temporaries.Add(decoded);
+                sources.Add((decoded, channel));
+            }
+        }
 
         if (sources.Count == 0)
             throw new InvalidOperationException("В папке встречи нет аудиофайлов");
@@ -131,6 +148,8 @@ public sealed class FinalPassTranscriber
         using var factory = WhisperFactory.FromPath(ModelPath);
         var segments = new List<TranscriptSegment>();
 
+        try
+        {
         for (var i = 0; i < sources.Count; i++)
         {
             var (path, channel) = sources[i];
@@ -160,6 +179,14 @@ public sealed class FinalPassTranscriber
             }
 
             progress?.Report((i + 1) / (double)sources.Count);
+        }
+        }
+        finally
+        {
+            foreach (var decodedFile in temporaries)
+            {
+                try { File.Delete(decodedFile); } catch (IOException) { }
+            }
         }
 
         if (segments.Count == 0)

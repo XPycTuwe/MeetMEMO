@@ -52,6 +52,8 @@ public sealed record RecordingPreferences
     public required bool SaveAudioFiles { get; init; }
 
     public required bool AutoScreenshotsEnabled { get; init; }
+
+    public required bool ShowSubtitles { get; init; }
 }
 
 /// <summary>
@@ -73,6 +75,7 @@ public partial class SourcePickerWindow : Window
 
         SaveAudioBox.IsChecked = settings.SaveAudioFiles;
         AutoShotsBox.IsChecked = settings.AutoScreenshots;
+        SubtitlesBox.IsChecked = settings.ShowSubtitles;
 
         AudioModeBox.Items.Add("Звук выбранного приложения");
         AudioModeBox.Items.Add("Общий звук системы");
@@ -228,7 +231,8 @@ public partial class SourcePickerWindow : Window
             AudioMode = mode,
             MicrophoneDeviceId = (MicrophoneBox.SelectedItem as AudioDeviceInfo)?.Id,
             SaveAudioFiles = SaveAudioBox.IsChecked == true,
-            AutoScreenshotsEnabled = AutoShotsBox.IsChecked == true
+            AutoScreenshotsEnabled = AutoShotsBox.IsChecked == true,
+            ShowSubtitles = SubtitlesBox.IsChecked == true
         };
 
         DialogResult = true;

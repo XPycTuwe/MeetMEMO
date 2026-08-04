@@ -12,10 +12,26 @@ public sealed class WaveFileTap : IAudioTap, IDisposable
 {
     private const int BytesPerSample = 2; // 16-bit PCM: вдвое меньше места, качества хватает
 
+    /// <summary>
+    /// Частота записи на диск. Устройства отдают что угодно — микрофон нередко 96 кГц, —
+    /// но распознавание всё равно работает на 16 кГц, а речь на слух от лишних килогерц
+    /// не выигрывает. Час записи 96 кГц занимает 660 МБ против 110 МБ на 16 кГц.
+    /// </summary>
+    public const int TargetSampleRate = 16000;
+
     private readonly FileStream _stream;
     private readonly string _sidecarPath;
     private readonly int _sampleRate;
     private readonly int _channels;
+    private readonly int _sourceChannels;
+
+    /// <summary>Сколько входных отсчётов приходится на один записанный.</summary>
+    private readonly double _decimation;
+
+    private double _phase;
+    private double _sum;
+    private int _summed;
+
     private readonly object _gate = new();
     private long _dataBytes;
     private long _lastSidecarFlush;
@@ -25,8 +41,14 @@ public sealed class WaveFileTap : IAudioTap, IDisposable
     {
         Channel = channel;
         Name = $"wav:{channel}";
-        _sampleRate = sampleRate;
-        _channels = channels;
+
+        _sourceChannels = Math.Max(1, channels);
+
+        // Пишем моно: для стенограммы вторая дорожка бесполезна, а места занимает вдвое.
+        _channels = 1;
+        _sampleRate = Math.Min(sampleRate, TargetSampleRate);
+        _decimation = sampleRate / (double)_sampleRate;
+
         _sidecarPath = path + ".len";
 
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -53,17 +75,42 @@ public sealed class WaveFileTap : IAudioTap, IDisposable
             if (_disposed) return;
 
             var samples = buffer.Samples;
-            var bytes = new byte[samples.Length * BytesPerSample];
-            for (var i = 0; i < samples.Length; i++)
+            var frames = samples.Length / _sourceChannels;
+            if (frames == 0) return;
+
+            // Худший случай — запись один в один; обычно выходных отсчётов кратно меньше.
+            var bytes = new byte[(frames + 1) * BytesPerSample];
+            var written = 0;
+
+            for (var frame = 0; frame < frames; frame++)
             {
-                var clamped = Math.Clamp(samples[i], -1f, 1f);
-                var value = (short)(clamped * short.MaxValue);
-                bytes[i * 2] = (byte)(value & 0xFF);
-                bytes[i * 2 + 1] = (byte)((value >> 8) & 0xFF);
+                // Каналы сводим в один: у стереодорожки в обоих каналах та же речь.
+                double mono = 0;
+                for (var c = 0; c < _sourceChannels; c++)
+                    mono += samples[frame * _sourceChannels + c];
+                mono /= _sourceChannels;
+
+                // Понижение частоты усреднением, а не выбрасыванием отсчётов: простое
+                // прореживание даёт слышимый призвук на согласных.
+                _sum += mono;
+                _summed++;
+                _phase += 1;
+
+                if (_phase < _decimation) continue;
+                _phase -= _decimation;
+
+                var value = (short)(Math.Clamp(_sum / _summed, -1d, 1d) * short.MaxValue);
+                bytes[written++] = (byte)(value & 0xFF);
+                bytes[written++] = (byte)((value >> 8) & 0xFF);
+
+                _sum = 0;
+                _summed = 0;
             }
 
-            _stream.Write(bytes);
-            _dataBytes += bytes.Length;
+            if (written == 0) return;
+
+            _stream.Write(bytes, 0, written);
+            _dataBytes += written;
 
             // Раз в ~5 секунд фиксируем длину: этого достаточно, чтобы починить файл после аварии.
             if (_dataBytes - _lastSidecarFlush > _sampleRate * _channels * BytesPerSample * 5)

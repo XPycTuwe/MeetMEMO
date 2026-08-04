@@ -119,6 +119,9 @@ public static class Win32
     public static extern uint GetDpiForWindow(IntPtr hWnd);
 
     public const uint GA_ROOT = 2;
+
+    /// <summary>Владелец окна верхнего уровня: у модального диалога это окно, его открывшее.</summary>
+    public const uint GA_ROOTOWNER = 3;
     public const int GWL_STYLE = -16;
     public const int GWL_EXSTYLE = -20;
 

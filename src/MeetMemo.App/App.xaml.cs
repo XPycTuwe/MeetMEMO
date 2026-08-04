@@ -330,7 +330,8 @@ public partial class App : Application
             MicrophoneDeviceId = preferences.MicrophoneDeviceId,
             AudioMode = preferences.AudioMode,
             SaveAudioFiles = preferences.SaveAudioFiles,
-            AutoScreenshots = preferences.AutoScreenshotsEnabled
+            AutoScreenshots = preferences.AutoScreenshotsEnabled,
+            ShowSubtitles = preferences.ShowSubtitles
         };
         await _settings.SaveAsync();
 
@@ -558,13 +559,8 @@ public partial class App : Application
         _controller.UserFacingError += message =>
             Dispatcher.BeginInvoke(() => _tray?.ShowBalloonTip("MeetMemo", message, BalloonIcon.Error));
 
-        _asr.SegmentRecognized += segment => Dispatcher.BeginInvoke(() =>
-        {
-            if (_overlays.TryGetValue(TitleBarOverlay.RecordingTarget, out var overlay))
-                overlay.ShowLiveText(segment.Text);
-
-            _systemOverlay?.ShowLiveText(segment.Text);
-        });
+        _asr.SegmentRecognized += segment => Dispatcher.BeginInvoke(
+            () => _subtitles?.ShowLiveText(segment.Text));
 
         var result = await _controller.SendAsync(new SessionCommand.Start(request));
         if (!result.Accepted)
@@ -591,6 +587,10 @@ public partial class App : Application
             // встречу можно было бы только горячей клавишей или из трея.
             EnsureOverlayForRecording(request);
         }
+
+        // Субтитры одинаково нужны в обоих режимах: это единственное место, где видно,
+        // что речь действительно распознаётся, а не просто идёт запись звука.
+        ShowSubtitles();
 
         if (_settings.StartSound) System.Media.SystemSounds.Asterisk.Play();
     }
@@ -626,6 +626,48 @@ public partial class App : Application
 
     /// <summary>Плавающая панель записи всей системы. Живёт только во время такой записи.</summary>
     private SystemOverlay? _systemOverlay;
+
+    /// <summary>Субтитры распознавания внизу экрана. Живут только во время записи.</summary>
+    private SubtitleOverlay? _subtitles;
+
+    /// <summary>
+    /// Показывает субтитры распознавания. Без моделей распознавания их показывать не за чем:
+    /// строки в них не появятся, и пульсирующая точка будет обещать работу, которой нет.
+    /// </summary>
+    private void ShowSubtitles()
+    {
+        if (!_settings.ShowSubtitles) return;
+        if (new ModelManager(_settings.ModelsRoot).GetMissing().Count > 0) return;
+
+        try
+        {
+            _subtitles ??= new SubtitleOverlay();
+            _subtitles.Reset();
+            _subtitles.Show();
+        }
+        catch (Exception ex)
+        {
+            LogError("subtitles", ex);
+        }
+    }
+
+    private void CloseSubtitles()
+    {
+        if (_subtitles is null) return;
+
+        try
+        {
+            _subtitles.Close();
+        }
+        catch (Exception ex)
+        {
+            LogError("subtitles-close", ex);
+        }
+        finally
+        {
+            _subtitles = null;
+        }
+    }
 
     private void ShowSystemOverlay()
     {
@@ -695,6 +737,7 @@ public partial class App : Application
         {
             TitleBarOverlay.RecordingTarget = 0;
             CloseSystemOverlay();
+            CloseSubtitles();
 
             // Значок, заведённый только ради записи, вместе с ней и исчезает:
             // у неотмеченного приложения он висеть не должен.
@@ -703,6 +746,10 @@ public partial class App : Application
                 if (_overlays.Remove(_temporaryOverlay, out var temp)) temp.Close();
                 _temporaryOverlay = 0;
             }
+
+            // Сжимаем до показа карточки: иначе в составе пакета будет виден WAV,
+            // которого через секунду уже не станет, и размер архива окажется неверным.
+            await CompressAudioAsync(result.FolderPath);
 
             UpdateRecentMenu();
 
@@ -840,6 +887,28 @@ public partial class App : Application
                 _tray?.ShowBalloonTip("MeetMemo", result.Message ?? "Снимок не сделан", BalloonIcon.Warning);
         });
 
+    /// <summary>
+    /// Переводит записанные дорожки в MP3. Час речи весит около двадцати мегабайт вместо
+    /// сотни с лишним, а разницы на слух нет. Если сжать не вышло, WAV остаётся на месте:
+    /// экономия места не стоит записи встречи.
+    /// </summary>
+    private static async Task CompressAudioAsync(string folderPath)
+    {
+        try
+        {
+            var folder = new MeetingFolder(folderPath);
+            await Task.Run(() =>
+            {
+                AudioCompressor.CompressInPlace(folder.MicrophoneAudio());
+                AudioCompressor.CompressInPlace(folder.ApplicationAudio());
+            });
+        }
+        catch (Exception ex)
+        {
+            LogError("audio-compress", ex);
+        }
+    }
+
     /// <summary>Подменю последних встреч — минимальный доступ к истории из трея (ТЗ 5.1).</summary>
     private void UpdateRecentMenu()
     {
@@ -872,10 +941,26 @@ public partial class App : Application
             {
                 var item = new MenuItem { Header = folder.Name };
                 var path = folder.FullName;
-                item.Click += (_, _) => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"")
+
+                // Открываем ту же карточку, что и сразу после встречи: собрать ZIP
+                // можно в любой момент, а не только пока окно не закрыли.
+                item.Click += (_, _) => DeferToUi(() =>
                 {
-                    UseShellExecute = true
+                    var card = CompletionWindow.ForFolder(path, _settings);
+                    if (card is not null)
+                    {
+                        card.Show();
+                    }
+                    else
+                    {
+                        // Папка без session.json — не встреча MeetMemo, показывать в карточке нечего.
+                        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"")
+                        {
+                            UseShellExecute = true
+                        });
+                    }
                 });
+
                 recentItem.Items.Add(item);
             }
         }

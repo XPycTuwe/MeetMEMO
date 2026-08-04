@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using MeetMemo.Contracts;
 using MeetMemo.Core;
 using MeetMemo.Export;
+using MeetMemo.Storage;
 
 namespace MeetMemo.App;
 
@@ -49,6 +51,57 @@ public partial class CompletionWindow : Window
         {
             WarningsText.Text = "Предупреждения:\n• " + string.Join("\n• ", result.Warnings);
             WarningsText.Visibility = Visibility.Visible;
+        }
+    }
+
+    /// <summary>
+    /// Открывает карточку для встречи, записанной раньше. Собрать архив можно было
+    /// только сразу после остановки; если окно закрыли, оставалось паковать вручную.
+    /// Сводку восстанавливаем по файлам самой папки — session.json описывает встречу
+    /// полностью, а реплики и снимки пересчитываются по месту.
+    /// </summary>
+    public static CompletionWindow? ForFolder(string folderPath, AppSettings settings)
+    {
+        var folder = new MeetingFolder(folderPath);
+        if (!File.Exists(folder.SessionJson)) return null;
+
+        SessionManifest? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<SessionManifest>(
+                File.ReadAllText(folder.SessionJson), JsonSetup.Compact);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        if (manifest is null) return null;
+
+        var result = new SessionResult
+        {
+            SessionId = manifest.SessionId,
+            FolderPath = folderPath,
+            Status = manifest.Status,
+            Duration = TimeSpan.FromMilliseconds(manifest.DurationMs ?? 0),
+            SegmentCount = CountLines(folder.TranscriptJsonl),
+            ScreenshotCount = Directory.Exists(folder.ScreenshotsDir)
+                ? Directory.GetFiles(folder.ScreenshotsDir, "*.png").Length
+                : 0
+        };
+
+        return new CompletionWindow(result, settings);
+    }
+
+    private static int CountLines(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? File.ReadLines(path).Count() : 0;
+        }
+        catch (IOException)
+        {
+            return 0;
         }
     }
 

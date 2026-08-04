@@ -64,10 +64,12 @@ public partial class TitleBarOverlay : Window
         _tracker.Closed += () => Dispatcher.BeginInvoke(Close);
 
         // Состояние сессии меняется не только по нажатию наших кнопок (есть горячие
-        // клавиши и плавающая панель), поэтому подписи обновляем по таймеру.
+        // клавиши и плавающая панель), поэтому подписи обновляем по таймеру. Тем же
+        // тактом ловится и смена активного окна: полсекунды задержки на переключении
+        // между приложениями были бы заметны, значок появлялся бы с опозданием.
         _stateTimer = new DispatcherTimer(DispatcherPriority.Normal)
         {
-            Interval = TimeSpan.FromMilliseconds(500)
+            Interval = TimeSpan.FromMilliseconds(250)
         };
         _stateTimer.Tick += (_, _) =>
         {
@@ -107,26 +109,6 @@ public partial class TitleBarOverlay : Window
 
     /// <summary>Пользователь нажал «Записать» в заголовке этого окна.</summary>
     public event Action<TitleBarOverlay>? RecordRequested;
-
-    /// <summary>Показывает последнюю распознанную реплику — подтверждение, что стенограмма идёт.</summary>
-    public void ShowLiveText(string text)
-    {
-        LiveText.Text = text;
-        _hasLiveText = !string.IsNullOrWhiteSpace(text);
-        UpdateLivePanelVisibility();
-    }
-
-    private bool _hasLiveText;
-
-    /// <summary>
-    /// Строка стенограммы показывается только вместе с развёрнутым управлением:
-    /// в свёрнутом виде на заголовке чужого окна должен оставаться один значок.
-    /// </summary>
-    private void UpdateLivePanelVisibility()
-    {
-        var show = _hasLiveText && ControlsPanel.Visibility == Visibility.Visible;
-        LivePanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-    }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
@@ -196,7 +178,31 @@ public partial class TitleBarOverlay : Window
             return;
         }
 
+        // Значок висит поверх всех окон, поэтому у отмеченного приложения он был бы
+        // виден и тогда, когда само окно закрыто другими: при пяти отмеченных
+        // приложениях экран покрывался значками, не относящимися к тому, что видно.
+        // Показываем значок только на окне, с которым человек работает прямо сейчас.
+        if (!IsTargetActive())
+        {
+            if (IsVisible) Hide();
+            return;
+        }
+
         if (!IsVisible) Show();
+    }
+
+    /// <summary>
+    /// Работает ли пользователь сейчас именно с этим окном. Учитываем и дочерние окна:
+    /// у открытого модального диалога активен он, но окно-владелец остаётся тем же,
+    /// и прятать значок из-за диалога не за чем.
+    /// </summary>
+    private bool IsTargetActive()
+    {
+        var foreground = Win32.GetForegroundWindow();
+        if (foreground == IntPtr.Zero) return false;
+        if (foreground == _targetWindow) return true;
+
+        return Win32.GetAncestor(foreground, Win32.GA_ROOTOWNER) == _targetWindow;
     }
 
     private void UpdateState()
@@ -251,10 +257,6 @@ public partial class TitleBarOverlay : Window
             QuickShotButton.Visibility = Visibility.Collapsed;
             AutoShotsBox.Visibility = Visibility.Collapsed;
 
-            // Вне записи показывать нечего: строка стенограммы относится к текущей встрече.
-            _hasLiveText = false;
-            LivePanel.Visibility = Visibility.Collapsed;
-
             // Пока идёт запись другого окна, начать вторую встречу нельзя.
             RecordButton.IsEnabled = state is SessionState.Idle
                 or SessionState.Completed or SessionState.Failed;
@@ -289,8 +291,6 @@ public partial class TitleBarOverlay : Window
         // наведением: иначе панель разворачивалась бы от курсора, проходящего далеко
         // левее значка. Считаем только по тому, что реально нарисовано.
         var contentWidth = ButtonsPanel.ActualWidth > 0 ? ButtonsPanel.ActualWidth : 24;
-        if (LivePanel.Visibility == Visibility.Visible)
-            contentWidth += LivePanel.ActualWidth + LivePanel.Margin.Right;
 
         var right = (Left + Width) * scale;
         var left = right - contentWidth * scale;
@@ -306,11 +306,7 @@ public partial class TitleBarOverlay : Window
         if (inside)
         {
             _awayTicks = 0;
-            if (ControlsPanel.Visibility != Visibility.Visible)
-            {
-                ControlsPanel.Visibility = Visibility.Visible;
-                UpdateLivePanelVisibility();
-            }
+            ControlsPanel.Visibility = Visibility.Visible;
             return;
         }
 
@@ -321,7 +317,6 @@ public partial class TitleBarOverlay : Window
         if (_awayTicks < 2) return;
 
         ControlsPanel.Visibility = Visibility.Collapsed;
-        UpdateLivePanelVisibility();
     }
 
     /// <summary>Идёт ли запись именно этого окна (а не какого-то другого).</summary>

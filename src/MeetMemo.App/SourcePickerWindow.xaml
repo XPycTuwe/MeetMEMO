@@ -75,6 +75,10 @@
                 <CheckBox x:Name="AutoShotsBox" Content="Автоснимки окна"
                           FontFamily="Segoe UI" FontSize="13" IsChecked="True"
                           Margin="24,0,0,0" VerticalAlignment="Center" />
+                <CheckBox x:Name="SubtitlesBox" Content="Субтитры распознавания"
+                          FontFamily="Segoe UI" FontSize="13" IsChecked="True"
+                          Margin="24,0,0,0" VerticalAlignment="Center"
+                          ToolTip="Полупрозрачная строка внизу экрана: видно, что речь распознаётся" />
             </StackPanel>
 
             <TextBlock x:Name="WarningText" Style="{StaticResource Label}"

@@ -31,6 +31,13 @@ public sealed record AppSettings
     [JsonPropertyName("auto_screenshots")]
     public bool AutoScreenshots { get; init; } = true;
 
+    /// <summary>
+    /// Показывать субтитры распознавания внизу экрана во время записи. Читать их не нужно —
+    /// они подтверждают, что стенограмма пишется. Кому мешает, тот выключает.
+    /// </summary>
+    [JsonPropertyName("show_subtitles")]
+    public bool ShowSubtitles { get; init; } = true;
+
     [JsonPropertyName("auto_screenshot_interval_seconds")]
     public int AutoScreenshotIntervalSeconds { get; init; } = 15;
 
