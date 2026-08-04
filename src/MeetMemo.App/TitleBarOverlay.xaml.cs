@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -28,6 +29,16 @@ public partial class TitleBarOverlay : Window
     /// а точное значение подстраивается настройкой `title_bar_offset`.
     /// </summary>
     public static double SystemButtonsWidth { get; set; } = 250;
+
+    /// <summary>
+    /// Пользователь перетащил значок — новый отступ от правого края. Приложение сохраняет
+    /// его в настройки и переставляет остальные значки: место должно быть общим для всех окон.
+    /// </summary>
+    public static event Action<double>? OffsetChanged;
+
+    private bool _dragging;
+    private double _dragStartScreenX;
+    private double _dragStartOffset;
 
     private readonly nint _targetWindow;
 
@@ -109,6 +120,52 @@ public partial class TitleBarOverlay : Window
 
     /// <summary>Пользователь нажал «Записать» в заголовке этого окна.</summary>
     public event Action<TitleBarOverlay>? RecordRequested;
+
+    /// <summary>
+    /// Перетаскивание значка по горизонтали. Экранные координаты берём напрямую у системы:
+    /// окно во время перетаскивания само едет за курсором, и позиция относительно него
+    /// всё время «догоняет» — сдвиг получался бы вдвое меньше настоящего.
+    /// </summary>
+    /// <summary>Переставить значок после того, как отступ поменяли на другом окне.</summary>
+    public void Reposition() => PositionOver(WindowTracker.GetBounds(_targetWindow));
+
+    private void OnBadgeDragStart(object sender, MouseButtonEventArgs e)
+    {
+        if (!GetCursorPos(out var cursor)) return;
+
+        _dragging = true;
+        _dragStartScreenX = cursor.X;
+        _dragStartOffset = SystemButtonsWidth;
+        Badge.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnBadgeDragMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragging || !GetCursorPos(out var cursor)) return;
+
+        var scale = _lastBounds.Dpi > 0 ? _lastBounds.Dpi / 96.0 : 1.0;
+
+        // Тянем влево — значок отходит от правого края, поэтому знак обратный.
+        var moved = (_dragStartScreenX - cursor.X) / scale;
+
+        // Границы: у правого края значок налезет на системные кнопки, слишком далеко
+        // влево — уедет за пределы даже широкого окна.
+        SystemButtonsWidth = Math.Clamp(_dragStartOffset + moved, 40, 1200);
+
+        PositionOver(WindowTracker.GetBounds(_targetWindow));
+    }
+
+    private void OnBadgeDragEnd(object sender, MouseButtonEventArgs e)
+    {
+        if (!_dragging) return;
+
+        _dragging = false;
+        Badge.ReleaseMouseCapture();
+        e.Handled = true;
+
+        OffsetChanged?.Invoke(SystemButtonsWidth);
+    }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {

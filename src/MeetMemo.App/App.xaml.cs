@@ -64,6 +64,7 @@ public partial class App : Application
         _settings = await AppSettings.LoadAsync();
         Directory.CreateDirectory(_settings.MeetingsRoot);
         TitleBarOverlay.SystemButtonsWidth = _settings.TitleBarOffset;
+        TitleBarOverlay.OffsetChanged += OnTitleBarOffsetChanged;
 
         CreateDialogOwner();
         SetupTray();
@@ -886,6 +887,26 @@ public partial class App : Application
             if (!result.Accepted)
                 _tray?.ShowBalloonTip("MeetMemo", result.Message ?? "Снимок не сделан", BalloonIcon.Warning);
         });
+
+    /// <summary>
+    /// Значок перетащили на новое место. Место общее для всех окон, поэтому переставляем
+    /// остальные значки сразу — иначе они разъедутся до перезапуска приложения.
+    /// </summary>
+    private async void OnTitleBarOffsetChanged(double offset)
+    {
+        foreach (var overlay in _overlays.Values) overlay.Reposition();
+
+        _settings = _settings with { TitleBarOffset = offset };
+
+        try
+        {
+            await _settings.SaveAsync();
+        }
+        catch (Exception ex)
+        {
+            LogError("save-title-bar-offset", ex);
+        }
+    }
 
     /// <summary>
     /// Переводит записанные дорожки в MP3. Час речи весит около двадцати мегабайт вместо

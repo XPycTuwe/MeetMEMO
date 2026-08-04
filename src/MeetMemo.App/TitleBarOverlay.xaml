@@ -112,8 +112,15 @@
                 </Button.Template>
             </Button>
 
+            <!-- Значок можно таскать по заголовку: у каждого приложения свои кнопки
+                 слева от системных, и единого правильного места не существует.
+                 Прозрачный фон мышью не ловится — нужен явный Transparent. -->
             <Grid x:Name="Badge" Width="20" Height="20" Margin="0,0,2,0"
-                  VerticalAlignment="Center" Background="{x:Null}">
+                  VerticalAlignment="Center" Background="Transparent"
+                  Cursor="SizeWE"
+                  MouseLeftButtonDown="OnBadgeDragStart"
+                  MouseMove="OnBadgeDragMove"
+                  MouseLeftButtonUp="OnBadgeDragEnd">
                 <Ellipse x:Name="BadgeRing" Width="18" Height="18"
                          Stroke="#B39CA3AF" StrokeThickness="1.5" Fill="#33FFFFFF" />
                 <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#FF9CA3AF" />
