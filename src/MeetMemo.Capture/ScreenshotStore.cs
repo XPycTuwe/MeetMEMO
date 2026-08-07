@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Runtime.Versioning;
 using MeetMemo.Contracts;
 using MeetMemo.Core;
@@ -22,6 +23,12 @@ public sealed class ScreenshotStore
     private readonly ILogger _log;
     private readonly List<ScreenshotEntry> _entries = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    /// <summary>
+    /// Сколько цветов оставлять в снимке. Задаётся настройкой приложения; ноль и меньше
+    /// означает «без уменьшения палитры».
+    /// </summary>
+    public static int ScreenshotColors { get; set; } = ScreenshotWriter.DefaultColors;
 
     public ScreenshotStore(MeetingFolder folder, ISessionClock clock, ILogger? log = null)
     {
@@ -64,7 +71,7 @@ public sealed class ScreenshotStore
                 suffix++;
             }
 
-            bitmap.Save(path, ImageFormat.Png);
+            ScreenshotWriter.Save(bitmap, path, ScreenshotColors);
 
             var entry = new ScreenshotEntry
             {

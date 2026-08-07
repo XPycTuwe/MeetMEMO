@@ -41,6 +41,14 @@ public sealed record AppSettings
     [JsonPropertyName("auto_screenshot_interval_seconds")]
     public int AutoScreenshotIntervalSeconds { get; init; } = 15;
 
+    /// <summary>
+    /// Сколько цветов оставлять в снимке. Полноцветный снимок 4K весит 3–6 МБ, а на слайдах
+    /// и в интерфейсах реальных оттенков десятки: 64 цвета уменьшают файл в разы, не размывая
+    /// текст. Поставьте 0, чтобы сохранять снимки без уменьшения палитры.
+    /// </summary>
+    [JsonPropertyName("screenshot_colors")]
+    public int ScreenshotColors { get; init; } = 64;
+
     [JsonPropertyName("auto_screenshot_threshold")]
     public int AutoScreenshotThreshold { get; init; } = 10;
 

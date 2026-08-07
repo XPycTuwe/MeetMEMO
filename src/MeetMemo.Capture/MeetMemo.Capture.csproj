@@ -4,6 +4,10 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Нужен только ради кодировщика PNG с палитрой: он умеет строить палитру
+         под конкретное изображение, а GDI+ — нет. Приложение и так на WPF,
+         так что в сборку ничего нового не добавляется. -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\MeetMemo.Contracts\MeetMemo.Contracts.csproj" />

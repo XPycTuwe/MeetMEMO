@@ -65,6 +65,7 @@ public partial class App : Application
         Directory.CreateDirectory(_settings.MeetingsRoot);
         TitleBarOverlay.SystemButtonsWidth = _settings.TitleBarOffset;
         TitleBarOverlay.OffsetChanged += OnTitleBarOffsetChanged;
+        ScreenshotStore.ScreenshotColors = _settings.ScreenshotColors;
 
         CreateDialogOwner();
         SetupTray();
