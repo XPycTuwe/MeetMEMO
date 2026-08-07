@@ -31,11 +31,18 @@ public partial class TitleBarOverlay : Window
     public static double SystemButtonsWidth { get; set; } = 250;
 
     /// <summary>
-    /// Пользователь перетащил значок — новый отступ от правого края. Приложение сохраняет
-    /// его в настройки и переставляет остальные значки: место должно быть общим для всех окон.
+    /// Отступ именно этого окна. У каждого приложения свои кнопки слева от системных,
+    /// поэтому единого места нет: в браузере значок стоит одним образом, в TrueConf другим.
     /// </summary>
-    public static event Action<double>? OffsetChanged;
+    public double Offset { get; set; }
 
+    /// <summary>
+    /// Пользователь перетащил значок: имя приложения и новый отступ от правого края.
+    /// Приложение сохраняет это в настройки — по одному значению на приложение.
+    /// </summary>
+    public static event Action<string, double>? OffsetChanged;
+
+    private bool _pressed;
     private bool _dragging;
     private double _dragStartScreenX;
     private double _dragStartOffset;
@@ -57,13 +64,15 @@ public partial class TitleBarOverlay : Window
     private SessionController? _controller => _controllerProvider();
 
     public TitleBarOverlay(
-        nint targetWindow, string applicationName, Func<SessionController?> controllerProvider)
+        nint targetWindow, string applicationName, Func<SessionController?> controllerProvider,
+        double offset)
     {
         InitializeComponent();
 
         _targetWindow = targetWindow;
         _controllerProvider = controllerProvider;
         ApplicationName = applicationName;
+        Offset = offset;
 
         _tracker = new WindowTracker(targetWindow);
         _tracker.Moved += bounds => Dispatcher.BeginInvoke(() => PositionOver(bounds));
@@ -80,11 +89,14 @@ public partial class TitleBarOverlay : Window
         // между приложениями были бы заметны, значок появлялся бы с опозданием.
         _stateTimer = new DispatcherTimer(DispatcherPriority.Normal)
         {
-            Interval = TimeSpan.FromMilliseconds(250)
+            // Тем же тактом ловятся щелчки и перетаскивание значка, поэтому опрос
+            // должен быть частым: на четверти секунды перетаскивание идёт рывками.
+            Interval = TimeSpan.FromMilliseconds(60)
         };
         _stateTimer.Tick += (_, _) =>
         {
             UpdateState();
+            UpdateBadgeMouse();
             UpdateHoverState();
             // Страховка: если хук пропустил перемещение (например, окно пересоздалось
             // или сменило монитор), панель всё равно вернётся на своё место.
@@ -129,42 +141,92 @@ public partial class TitleBarOverlay : Window
     /// <summary>Переставить значок после того, как отступ поменяли на другом окне.</summary>
     public void Reposition() => PositionOver(WindowTracker.GetBounds(_targetWindow));
 
-    private void OnBadgeDragStart(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// Насколько нужно увести мышь, чтобы нажатие считалось перетаскиванием. Без порога
+    /// значок сдвигался бы от любого дрожания руки при обычном щелчке.
+    /// </summary>
+    private const double DragThreshold = 4;
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
+
+    private const int VK_LBUTTON = 0x01;
+
+    private bool _mouseWasDown;
+
+    /// <summary>
+    /// Работа с мышью на значке: щелчок открывает и закрывает управление, удержание
+    /// с движением — перетаскивает значок по заголовку.
+    ///
+    /// Всё считается по координатам курсора и состоянию кнопки, а не по событиям WPF:
+    /// окно создано без активации и с прозрачным фоном, события мыши до его содержимого
+    /// не доходят вовсе — щелчок по значку просто не замечался.
+    /// </summary>
+    private void UpdateBadgeMouse()
     {
         if (!GetCursorPos(out var cursor)) return;
 
-        _dragging = true;
-        _dragStartScreenX = cursor.X;
-        _dragStartOffset = SystemButtonsWidth;
-        Badge.CaptureMouse();
-        e.Handled = true;
+        var down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        var overBadge = IsCursorOverBadge(cursor);
+
+        if (down && !_mouseWasDown && overBadge)
+        {
+            _pressed = true;
+            _dragging = false;
+            _dragStartScreenX = cursor.X;
+            _dragStartOffset = Offset;
+        }
+        else if (down && _pressed)
+        {
+            var scale = _lastBounds.Dpi > 0 ? _lastBounds.Dpi / 96.0 : 1.0;
+
+            // Тянем влево — значок отходит от правого края, поэтому знак обратный.
+            var moved = (_dragStartScreenX - cursor.X) / scale;
+
+            if (_dragging || Math.Abs(moved) >= DragThreshold)
+            {
+                _dragging = true;
+
+                // Границы: у правого края значок налезет на системные кнопки,
+                // слишком далеко влево — уедет за пределы даже широкого окна.
+                Offset = Math.Clamp(_dragStartOffset + moved, 24, 1200);
+                PositionOver(WindowTracker.GetBounds(_targetWindow));
+            }
+        }
+        else if (!down && _pressed)
+        {
+            _pressed = false;
+
+            if (_dragging)
+            {
+                _dragging = false;
+                OffsetChanged?.Invoke(ApplicationName, Offset);
+            }
+            else
+            {
+                // Нажали и отпустили, не потянув — обычный щелчок по значку.
+                ControlsPanel.Visibility = ControlsPanel.Visibility == Visibility.Visible
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
+            }
+        }
+
+        _mouseWasDown = down;
     }
 
-    private void OnBadgeDragMove(object sender, MouseEventArgs e)
+    private bool IsCursorOverBadge(POINT cursor)
     {
-        if (!_dragging || !GetCursorPos(out var cursor)) return;
-
         var scale = _lastBounds.Dpi > 0 ? _lastBounds.Dpi / 96.0 : 1.0;
 
-        // Тянем влево — значок отходит от правого края, поэтому знак обратный.
-        var moved = (_dragStartScreenX - cursor.X) / scale;
+        // Значок прижат к правому краю окна; ширину берём с запасом на промах.
+        var right = (Left + Width) * scale;
+        var left = right - 22 * scale;
+        var top = Top * scale;
+        var bottom = top + 22 * scale;
 
-        // Границы: у правого края значок налезет на системные кнопки, слишком далеко
-        // влево — уедет за пределы даже широкого окна.
-        SystemButtonsWidth = Math.Clamp(_dragStartOffset + moved, 40, 1200);
-
-        PositionOver(WindowTracker.GetBounds(_targetWindow));
-    }
-
-    private void OnBadgeDragEnd(object sender, MouseButtonEventArgs e)
-    {
-        if (!_dragging) return;
-
-        _dragging = false;
-        Badge.ReleaseMouseCapture();
-        e.Handled = true;
-
-        OffsetChanged?.Invoke(SystemButtonsWidth);
+        const double margin = 4;
+        return cursor.X >= left - margin && cursor.X <= right + margin
+            && cursor.Y >= top - margin && cursor.Y <= bottom + margin;
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
@@ -206,7 +268,7 @@ public partial class TitleBarOverlay : Window
         // Ширина окна постоянна, содержимое внутри прижато вправо — поэтому правый
         // край окна всегда стоит на одном месте, чем бы ни было заполнено содержимое.
         var rightEdge = (bounds.Left + bounds.Width) / scale;
-        var left = rightEdge - SystemButtonsWidth - Width;
+        var left = rightEdge - Offset - Width;
 
         // У узкого окна места слева может не хватить: тогда прижимаем к левому краю.
         var leftEdge = bounds.Left / scale;
@@ -330,48 +392,46 @@ public partial class TitleBarOverlay : Window
     private int _awayTicks;
 
     /// <summary>
-    /// Разворачивание при наведении.
+    /// Закрытие открытой панели, когда курсор ушёл в сторону.
+    ///
+    /// Открывается панель только щелчком по значку: от наведения она выскакивала при
+    /// случайном движении мыши по заголовку. А вот закрывать по уходу курсора удобно —
+    /// иначе панель висела бы поверх чужого окна, пока про неё не вспомнят.
     ///
     /// Положение курсора проверяется напрямую, а не по событиям MouseEnter/MouseLeave:
-    /// окно панели создано без активации и с прозрачным фоном, и события наведения
-    /// у него срабатывают ненадёжно. Опрос идёт вместе с обновлением состояния,
-    /// отдельного таймера не нужно.
+    /// окно создано без активации и с прозрачным фоном, события наведения у него
+    /// срабатывают ненадёжно.
     /// </summary>
     private void UpdateHoverState()
     {
+        if (ControlsPanel.Visibility != Visibility.Visible) return;
+        if (_pressed) return;                       // идёт перетаскивание — не мешаем
         if (!GetCursorPos(out var cursor)) return;
 
-        var bounds = _lastBounds;
-        var scale = bounds.Dpi > 0 ? bounds.Dpi / 96.0 : 1.0;
+        var scale = _lastBounds.Dpi > 0 ? _lastBounds.Dpi / 96.0 : 1.0;
 
-        // Окно шире видимого содержимого, и его прозрачная часть не должна считаться
-        // наведением: иначе панель разворачивалась бы от курсора, проходящего далеко
-        // левее значка. Считаем только по тому, что реально нарисовано.
-        var contentWidth = ButtonsPanel.ActualWidth > 0 ? ButtonsPanel.ActualWidth : 24;
-
+        // Область считаем по всему окну, а не по измеренной ширине панели: сразу после
+        // открытия ActualWidth ещё нулевая, курсор оказывался «вне» — и панель
+        // закрывалась в том же такте, в котором открылась.
         var right = (Left + Width) * scale;
-        var left = right - contentWidth * scale;
+        var left = Left * scale;
         var top = Top * scale;
-        var bottom = top + Height * scale;
+        var bottom = (Top + Height) * scale;
 
-        // Небольшой запас вокруг панели: иначе она схлопывается от дрожания курсора
-        // на самой границе.
-        const double margin = 6;
+        const double margin = 8;
         var inside = cursor.X >= left - margin && cursor.X <= right + margin
                   && cursor.Y >= top - margin && cursor.Y <= bottom + margin;
 
         if (inside)
         {
             _awayTicks = 0;
-            ControlsPanel.Visibility = Visibility.Visible;
             return;
         }
 
-        if (ControlsPanel.Visibility != Visibility.Visible) return;
-
-        // Пара тактов отсрочки, чтобы панель не исчезала при переходе между кнопками.
+        // Около секунды отсрочки: панель не должна захлопываться от того, что курсор
+        // на мгновение вышел за край по дороге к нужной кнопке.
         _awayTicks++;
-        if (_awayTicks < 2) return;
+        if (_awayTicks < 16) return;
 
         ControlsPanel.Visibility = Visibility.Collapsed;
     }

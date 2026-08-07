@@ -76,6 +76,26 @@ public sealed record AppSettings
     [JsonPropertyName("title_bar_offset")]
     public double TitleBarOffset { get; init; } = 250;
 
+    /// <summary>
+    /// Отступ значка для конкретных приложений: имя процесса → расстояние до правого края.
+    /// У каждого приложения слева от системных кнопок своё — аватар профиля, меню, вкладки, —
+    /// поэтому одно общее значение не подходит никому. Заполняется перетаскиванием значка.
+    /// </summary>
+    [JsonPropertyName("title_bar_offsets")]
+    public Dictionary<string, double> TitleBarOffsets { get; init; } = new();
+
+    /// <summary>Отступ для приложения: его собственный, а если такого нет — общий.</summary>
+    public double OffsetFor(string? applicationName) =>
+        applicationName is not null && TitleBarOffsets.TryGetValue(applicationName, out var own)
+            ? own
+            : TitleBarOffset;
+
+    public AppSettings WithOffset(string applicationName, double offset)
+    {
+        var map = new Dictionary<string, double>(TitleBarOffsets) { [applicationName] = offset };
+        return this with { TitleBarOffsets = map };
+    }
+
     /// <summary>Куда пользователь перетащил плавающую панель записи всей системы.</summary>
     [JsonPropertyName("system_overlay_x")]
     public double? SystemOverlayX { get; init; }

@@ -407,8 +407,9 @@ public partial class App : Application
             {
                 if (_overlays.ContainsKey(window.Handle)) continue;
 
+                var appName = window.ProcessName ?? "приложение";
                 var overlay = new TitleBarOverlay(
-                    window.Handle, window.ProcessName ?? "приложение", () => _controller);
+                    window.Handle, appName, () => _controller, _settings.OffsetFor(appName));
                 overlay.RecordRequested += OnOverlayRecordRequested;
                 WireAutoScreenshots(overlay);
                 overlay.Closed += (_, _) => _overlays.Remove(window.Handle);
@@ -607,8 +608,9 @@ public partial class App : Application
 
         try
         {
+            var appName = request.Target?.ApplicationName ?? "приложение";
             var overlay = new TitleBarOverlay(
-                handle, request.Target?.ApplicationName ?? "приложение", () => _controller);
+                handle, appName, () => _controller, _settings.OffsetFor(appName));
             overlay.RecordRequested += OnOverlayRecordRequested;
             overlay.Closed += (_, _) => _overlays.Remove(handle);
             overlay.Show();
@@ -889,14 +891,21 @@ public partial class App : Application
         });
 
     /// <summary>
-    /// Значок перетащили на новое место. Место общее для всех окон, поэтому переставляем
-    /// остальные значки сразу — иначе они разъедутся до перезапуска приложения.
+    /// Значок перетащили на новое место. Запоминаем его для этого приложения и сразу
+    /// переставляем остальные его окна: в одном приложении значок должен стоять одинаково.
     /// </summary>
-    private async void OnTitleBarOffsetChanged(double offset)
+    private async void OnTitleBarOffsetChanged(string applicationName, double offset)
     {
-        foreach (var overlay in _overlays.Values) overlay.Reposition();
+        foreach (var overlay in _overlays.Values)
+        {
+            if (!string.Equals(overlay.ApplicationName, applicationName, StringComparison.OrdinalIgnoreCase))
+                continue;
 
-        _settings = _settings with { TitleBarOffset = offset };
+            overlay.Offset = offset;
+            overlay.Reposition();
+        }
+
+        _settings = _settings.WithOffset(applicationName, offset);
 
         try
         {
