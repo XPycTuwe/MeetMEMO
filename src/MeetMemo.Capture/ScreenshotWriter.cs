@@ -16,7 +16,10 @@ namespace MeetMemo.Capture;
 /// </summary>
 public static class ScreenshotWriter
 {
-    /// <summary>Сколько цветов оставлять. 64 хватает для интерфейсов, графиков и слайдов.</summary>
+    /// <summary>
+    /// Сколько цветов оставлять. На 64 снимок неотличим от полноцветного даже там, где
+    /// есть градиенты, а файл выходит в семь раз меньше исходного.
+    /// </summary>
     public const int DefaultColors = 64;
 
     /// <summary>
@@ -39,7 +42,7 @@ public static class ScreenshotWriter
             // Палитра строится по самому изображению: у скриншота свои несколько
             // десятков оттенков, и фиксированная палитра дала бы грязь на градиентах.
             var palette = new BitmapPalette(source, colors);
-            var indexed = new FormatConvertedBitmap(source, PixelFormats.Indexed8, palette, 0);
+            var indexed = Quantize(source, palette);
 
             var encoder = new PngBitmapEncoder();
             encoder.Interlace = PngInterlaceOption.Off;
@@ -53,6 +56,70 @@ public static class ScreenshotWriter
             // Резервный путь: обычный PNG без палитры.
             bitmap.Save(path, ImageFormat.Png);
         }
+    }
+
+    /// <summary>
+    /// Раскладывает изображение по палитре, заменяя каждый пиксель ближайшим цветом.
+    ///
+    /// Штатное преобразование WPF подмешивает дизеринг — рассыпает границы цветов мелкими
+    /// точками. На фотографии это скрывает переходы, а на снимке экрана только вредит:
+    /// ровная заливка превращается в шум, который PNG уже не может сжать. Без дизеринга
+    /// однотонные области остаются однотонными, и файл выходит в разы меньше.
+    ///
+    /// Найденные соответствия кешируются: на снимке экрана уникальных цветов немного,
+    /// и почти каждый пиксель попадает в готовый ответ.
+    /// </summary>
+    private static BitmapSource Quantize(BitmapSource source, BitmapPalette palette)
+    {
+        var bgra = new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
+
+        var width = bgra.PixelWidth;
+        var height = bgra.PixelHeight;
+        var pixels = new byte[width * height * 4];
+        bgra.CopyPixels(pixels, width * 4, 0);
+
+        var colors = palette.Colors;
+        var reds = new int[colors.Count];
+        var greens = new int[colors.Count];
+        var blues = new int[colors.Count];
+        for (var i = 0; i < colors.Count; i++)
+        {
+            reds[i] = colors[i].R;
+            greens[i] = colors[i].G;
+            blues[i] = colors[i].B;
+        }
+
+        var indexes = new byte[width * height];
+        var cache = new Dictionary<int, byte>();
+
+        for (int p = 0, q = 0; q < indexes.Length; p += 4, q++)
+        {
+            int b = pixels[p], g = pixels[p + 1], r = pixels[p + 2];
+            var key = (r << 16) | (g << 8) | b;
+
+            if (!cache.TryGetValue(key, out var nearest))
+            {
+                var bestDistance = int.MaxValue;
+                for (var i = 0; i < reds.Length; i++)
+                {
+                    var dr = r - reds[i];
+                    var dg = g - greens[i];
+                    var db = b - blues[i];
+                    var distance = dr * dr + dg * dg + db * db;
+                    if (distance >= bestDistance) continue;
+
+                    bestDistance = distance;
+                    nearest = (byte)i;
+                }
+
+                cache[key] = nearest;
+            }
+
+            indexes[q] = nearest;
+        }
+
+        return BitmapSource.Create(
+            width, height, 96, 96, PixelFormats.Indexed8, palette, indexes, width);
     }
 
     /// <summary>
