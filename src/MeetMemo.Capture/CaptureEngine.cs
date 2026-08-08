@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Runtime.Versioning;
 using MeetMemo.Contracts;
 using MeetMemo.Core;
@@ -226,6 +227,19 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
             if (_lastHash != 0 && PerceptualHash.Distance(_lastHash, hash) < _options.ChangeThreshold)
                 return;
 
+            // Кадр принят к сохранению: отмечаем это до записи на диск, иначе следующий
+            // тик таймера увидит ту же картинку и сделает дубль, пока идёт подтверждение.
+            _lastHash = hash;
+            _lastAutoOffsetMs = offset;
+
+            if (AutoScreenshotPending is { } pending)
+            {
+                // Кадр живёт в using и вот-вот освободится — отдаём копию: решение
+                // о сохранении принимается несколько секунд спустя.
+                pending(new Bitmap(bitmap), Interop.Win32.GetWindowTitle(_targetWindow));
+                return;
+            }
+
             var entry = _screenshots.SaveAsync(
                 bitmap, ScreenshotKind.ApplicationAuto, "frame_changed",
                 _applicationName, Interop.Win32.GetWindowTitle(_targetWindow))
@@ -233,8 +247,6 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
 
             if (entry is null) return;
 
-            _lastHash = hash;
-            _lastAutoOffsetMs = offset;
             _store.ScreenshotCount = _screenshots.Count;
             EmitScreenshotEvent(entry);
         }
@@ -242,6 +254,29 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
         {
             _log.LogError(ex, "Автоснимок не удался");
         }
+    }
+
+    /// <summary>
+    /// Автоснимок сделан и ждёт решения: кадр и заголовок окна. Пока подписчик есть,
+    /// сам движок такие снимки на диск не пишет — это делает <see cref="SaveConfirmedAsync"/>.
+    /// Владение переданным кадром переходит подписчику: освобождать его ему.
+    /// </summary>
+    public event Action<Bitmap, string?>? AutoScreenshotPending;
+
+    /// <summary>Сохраняет подтверждённый автоснимок — тот, что пережил обратный отсчёт.</summary>
+    public async Task<ScreenshotEntry?> SaveConfirmedAsync(Bitmap bitmap, string? windowTitle)
+    {
+        if (_screenshots is null) return null;
+
+        var entry = await _screenshots.SaveAsync(
+            bitmap, ScreenshotKind.ApplicationAuto, "frame_changed",
+            _applicationName, windowTitle).ConfigureAwait(false);
+
+        if (entry is null) return null;
+
+        _store.ScreenshotCount = _screenshots.Count;
+        EmitScreenshotEvent(entry);
+        return entry;
     }
 
     private void EmitScreenshotEvent(ScreenshotEntry entry)

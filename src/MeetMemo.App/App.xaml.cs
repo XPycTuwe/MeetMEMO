@@ -549,6 +549,12 @@ public partial class App : Application
             ChangeThreshold = _settings.AutoScreenshotThreshold
         });
 
+        if (_settings.ConfirmAutoScreenshots)
+        {
+            _capture.AutoScreenshotPending += (bitmap, title) =>
+                Dispatcher.BeginInvoke(() => ShowScreenshotConfirmation(bitmap, title));
+        }
+
         _asr = new AsrEngine(_store, _audio, _settings.ModelsRoot,
             AsrModelCatalog.FindById(_settings.LiveModelId) ?? AsrModelCatalog.GigaAmCtc);
 
@@ -633,6 +639,60 @@ public partial class App : Application
 
     /// <summary>Субтитры распознавания внизу экрана. Живут только во время записи.</summary>
     private SubtitleOverlay? _subtitles;
+
+    /// <summary>Карточки автоснимков, ожидающих подтверждения.</summary>
+    private ScreenshotConfirmWindow? _confirm;
+
+    /// <summary>
+    /// Показывает карточку нового автоснимка. Окно одно на все снимки: карточки
+    /// выстраиваются списком под значком, каждая со своим отсчётом.
+    /// </summary>
+    private void ShowScreenshotConfirmation(System.Drawing.Bitmap bitmap, string? windowTitle)
+    {
+        try
+        {
+            _confirm ??= new ScreenshotConfirmWindow(FindBadgeAnchor, SaveConfirmedScreenshot);
+            _confirm.Add(bitmap, windowTitle);
+        }
+        catch (Exception ex)
+        {
+            LogError("screenshot-confirm", ex);
+
+            // Показать не вышло — снимок всё равно должен попасть в пакет.
+            SaveConfirmedScreenshot(new PendingScreenshot
+            {
+                Image = bitmap,
+                Thumbnail = null!,
+                WindowTitle = windowTitle
+            });
+        }
+    }
+
+    /// <summary>Куда цеплять список карточек: под значок записываемого окна.</summary>
+    private Point? FindBadgeAnchor()
+    {
+        if (!_overlays.TryGetValue(TitleBarOverlay.RecordingTarget, out var overlay)) return null;
+        if (!overlay.IsVisible) return null;
+
+        return new Point(overlay.Left + overlay.Width, overlay.Top + 24);
+    }
+
+    private async void SaveConfirmedScreenshot(PendingScreenshot pending)
+    {
+        try
+        {
+            if (_capture is not null)
+                await _capture.SaveConfirmedAsync(pending.Image, pending.WindowTitle);
+        }
+        catch (Exception ex)
+        {
+            LogError("screenshot-save", ex);
+        }
+        finally
+        {
+            pending.Image.Dispose();
+        }
+    }
 
     /// <summary>
     /// Показывает субтитры распознавания. Без моделей распознавания их показывать не за чем:

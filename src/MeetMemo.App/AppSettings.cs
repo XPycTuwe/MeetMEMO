@@ -47,6 +47,14 @@ public sealed record AppSettings
     /// не размывая текст. Поднимите до 64–128, если в кадре бывают фотографии и плавные
     /// градиенты; 0 отключает уменьшение палитры совсем.
     /// </summary>
+    /// <summary>
+    /// Показывать карточку с обратным отсчётом перед сохранением автоснимка. Приложение
+    /// снимает экран само, и человек должен видеть, что именно попадёт в пакет, — с правом
+    /// отказаться. Выключите, если карточки мешают.
+    /// </summary>
+    [JsonPropertyName("confirm_auto_screenshots")]
+    public bool ConfirmAutoScreenshots { get; init; } = true;
+
     [JsonPropertyName("screenshot_colors")]
     public int ScreenshotColors { get; init; } = 64;
 
