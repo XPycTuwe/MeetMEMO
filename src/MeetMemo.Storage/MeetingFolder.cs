@@ -26,6 +26,9 @@ public sealed class MeetingFolder
     public string MicrophoneAudio(string ext = "wav") => Path.Combine(AudioDir, $"microphone.{ext}");
     public string ApplicationAudio(string ext = "wav") => Path.Combine(AudioDir, $"application.{ext}");
 
+    /// <summary>Текст, замеченный в окне встречи: имена участников, чат, заголовки.</summary>
+    public string ContextJsonl => Path.Combine(Root, "context.jsonl");
+
     public string ScreenshotsDir => Path.Combine(Root, "screenshots");
     public string ScreenshotIndex => Path.Combine(ScreenshotsDir, "index.json");
 

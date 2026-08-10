@@ -92,6 +92,7 @@ public static class ExportPlanBuilder
         AddFile(folder.TranscriptJsonl, ExportCategory.Transcript);
         AddFile(folder.TranscriptMd, ExportCategory.Transcript);
         AddFile(folder.GlossaryMd, ExportCategory.Transcript);
+        AddFile(folder.ContextJsonl, ExportCategory.Metadata);
         AddFile(Path.Combine(meetingFolderPath, "transcript.live.jsonl"), ExportCategory.Transcript, false);
 
         AddDirectory(folder.ScreenshotsDir, ExportCategory.Screenshots);

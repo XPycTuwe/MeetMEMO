@@ -55,6 +55,14 @@ public sealed record AppSettings
     [JsonPropertyName("confirm_auto_screenshots")]
     public bool ConfirmAutoScreenshots { get; init; } = true;
 
+    /// <summary>
+    /// Собирать текст из окна встречи: имена в списке участников, чат, тему. Диаризация
+    /// различает голоса, но назвать их может только это. Читается дерево доступности —
+    /// то же, что озвучивают программы экранного доступа; ничего из сети не перехватывается.
+    /// </summary>
+    [JsonPropertyName("collect_window_context")]
+    public bool CollectWindowContext { get; init; } = true;
+
     [JsonPropertyName("screenshot_colors")]
     public int ScreenshotColors { get; init; } = 64;
 

@@ -53,6 +53,56 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
     private bool _paused;
     private bool _targetLostReported;
 
+    /// <summary>Собирать ли текст из окна встречи. Выключается настройкой приложения.</summary>
+    public static bool CollectWindowContext { get; set; } = true;
+
+    /// <summary>
+    /// Как часто заглядывать в окно. Список участников и чат меняются медленно, а обход
+    /// дерева доступности стоит заметно дороже снимка — чаще незачем.
+    /// </summary>
+    private static readonly TimeSpan ContextInterval = TimeSpan.FromSeconds(30);
+
+    private Timer? _contextTimer;
+    private JsonlWriter? _context_writer;
+    private string _lastContextKey = string.Empty;
+
+    /// <summary>
+    /// Снимает текст окна встречи: имена в списке участников, сообщения чата, тему.
+    /// Пишется только то, что изменилось, — иначе за час набежит сотня одинаковых копий
+    /// одного и того же списка.
+    /// </summary>
+    private void TryCollectContext()
+    {
+        if (_context is null || _paused || _context_writer is null) return;
+
+        try
+        {
+            if (!WindowEnumerator.IsAlive(_targetWindow)) return;
+
+            var fragments = WindowTextReader.ReadVisibleText(_targetWindow);
+            if (fragments.Count == 0) return;
+
+            var key = string.Join('', fragments);
+            if (key == _lastContextKey) return;
+            _lastContextKey = key;
+
+            var entry = new WindowContextEntry
+            {
+                OffsetMs = _context.Clock.ElapsedMs,
+                WindowTitle = Interop.Win32.GetWindowTitle(_targetWindow),
+                Fragments = fragments
+            };
+
+            _context_writer.AppendAsync(entry).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            // Контекст — приятное дополнение, а не основа пакета: его сбой не должен
+            // мешать записи встречи.
+            _log.LogDebug(ex, "Не удалось снять контекст окна");
+        }
+    }
+
     public CaptureEngine(
         MeetingSessionStore store,
         DegradationPolicy degradation,
@@ -112,6 +162,14 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
         var folder = new MeetingFolder(context.FolderPath);
         _screenshots = new ScreenshotStore(folder, context.Clock, _log);
         _autoEnabled = context.Request.AutoScreenshotsEnabled;
+
+        if (_targetWindow != 0 && CollectWindowContext)
+        {
+            _context_writer = new JsonlWriter(folder.ContextJsonl);
+            _contextTimer = new Timer(
+                _ => TryCollectContext(), null,
+                TimeSpan.FromSeconds(5), ContextInterval);
+        }
 
         // Таймер заводим всегда: автоснимки можно включить уже во время встречи,
         // и пересоздавать таймер на лету не потребуется.
@@ -331,6 +389,18 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
             _autoTimer = null;
         }
 
+        if (_contextTimer is not null)
+        {
+            await _contextTimer.DisposeAsync().ConfigureAwait(false);
+            _contextTimer = null;
+        }
+
+        if (_context_writer is not null)
+        {
+            await _context_writer.DisposeAsync().ConfigureAwait(false);
+            _context_writer = null;
+        }
+
         if (_screenshots is not null)
         {
             await _screenshots.FlushAsync(ct).ConfigureAwait(false);
@@ -338,5 +408,10 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
         }
     }
 
-    public void Dispose() => _autoTimer?.Dispose();
+    public void Dispose()
+    {
+        _autoTimer?.Dispose();
+        _contextTimer?.Dispose();
+        _context_writer?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
 }

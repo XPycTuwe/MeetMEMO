@@ -66,6 +66,7 @@ public partial class App : Application
         TitleBarOverlay.SystemButtonsWidth = _settings.TitleBarOffset;
         TitleBarOverlay.OffsetChanged += OnTitleBarOffsetChanged;
         ScreenshotStore.ScreenshotColors = _settings.ScreenshotColors;
+        CaptureEngine.CollectWindowContext = _settings.CollectWindowContext;
 
         CreateDialogOwner();
         SetupTray();

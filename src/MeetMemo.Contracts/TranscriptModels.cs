@@ -42,6 +42,25 @@ public sealed record TranscriptSegment
     public string? Speaker { get; init; }
 }
 
+/// <summary>
+/// Строка context.jsonl: что было написано в окне встречи в этот момент — список
+/// участников, сообщения чата, тема. Диаризация различает голоса, но назвать их
+/// не может; имена приходят отсюда.
+/// </summary>
+public sealed record WindowContextEntry
+{
+    [JsonPropertyName("offset_ms")]
+    public required long OffsetMs { get; init; }
+
+    /// <summary>Заголовок окна на момент снятия — по нему видно смену комнаты или вкладки.</summary>
+    [JsonPropertyName("window_title")]
+    public string? WindowTitle { get; init; }
+
+    /// <summary>Текстовые фрагменты в порядке обхода окна: соседство в списке несёт смысл.</summary>
+    [JsonPropertyName("fragments")]
+    public required IReadOnlyList<string> Fragments { get; init; }
+}
+
 /// <summary>Тип снимка (ТЗ 9.1).</summary>
 public enum ScreenshotKind
 {
