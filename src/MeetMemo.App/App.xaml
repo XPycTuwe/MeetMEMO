@@ -22,6 +22,7 @@
                 <MenuItem x:Name="RecentItem" Header="Последние встречи" />
                 <MenuItem Header="Открыть папку встреч" Click="OnOpenMeetingsRootClick" />
                 <Separator />
+                <MenuItem Header="Знакомые голоса" Click="OnVoiceLibraryClick" />
                 <MenuItem Header="Проверить модели распознавания" Click="OnCheckModelsClick" />
                 <MenuItem Header="О программе" Click="OnAboutClick" />
                 <Separator />

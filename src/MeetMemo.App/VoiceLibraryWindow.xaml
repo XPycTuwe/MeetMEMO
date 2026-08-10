@@ -1,0 +1,61 @@
+<Window x:Class="MeetMemo.App.VoiceLibraryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MeetMemo — знакомые голоса"
+        Icon="Assets/app.ico"
+        Height="520" Width="720"
+        WindowStartupLocation="CenterScreen"
+        Background="#FFF7F8FA">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="Знакомые голоса"
+                       FontFamily="Segoe UI" FontSize="20" FontWeight="SemiBold" Foreground="#FF1F2937" />
+            <TextBlock x:Name="SubtitleText"
+                       Text="Приложение узнаёт этих людей по голосу и подставляет имена в стенограмму."
+                       FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085"
+                       TextWrapping="Wrap" Margin="0,4,0,12" />
+        </StackPanel>
+
+        <ListView x:Name="VoiceList" Grid.Row="1"
+                  FontFamily="Segoe UI" FontSize="13"
+                  SelectionChanged="OnSelectionChanged">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Header="Имя" Width="200" DisplayMemberBinding="{Binding Name}" />
+                    <GridViewColumn Header="Должность" Width="230" DisplayMemberBinding="{Binding Role}" />
+                    <GridViewColumn Header="Подтверждений" Width="110"
+                                    DisplayMemberBinding="{Binding Confirmations}" />
+                    <GridViewColumn Header="Запомнен" Width="110" DisplayMemberBinding="{Binding Since}" />
+                </GridView>
+            </ListView.View>
+        </ListView>
+
+        <!-- Правка задним числом: поговорил с человеком, не назвал его тогда —
+             можно вписать имя и должность позже. -->
+        <StackPanel Grid.Row="2" Margin="0,12,0,0">
+            <TextBlock Text="Имя" FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085" />
+            <TextBox x:Name="NameBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13"
+                     Margin="0,3,0,8" IsEnabled="False" />
+            <TextBlock Text="Должность или роль" FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085" />
+            <TextBox x:Name="RoleBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13"
+                     Margin="0,3,0,0" IsEnabled="False" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button x:Name="ForgetButton" Content="Забыть голос" Padding="14,6" Margin="0,0,8,0"
+                    FontFamily="Segoe UI" FontSize="13" IsEnabled="False" Click="OnForgetClick" />
+            <Button x:Name="SaveButton" Content="Сохранить" Padding="18,6"
+                    FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                    IsEnabled="False" Click="OnSaveClick" />
+            <Button x:Name="CloseButton" Content="Закрыть" Padding="14,6" Margin="8,0,0,0"
+                    FontFamily="Segoe UI" FontSize="13" Click="OnCloseClick" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -68,6 +68,9 @@ public partial class App : Application
         ScreenshotStore.ScreenshotColors = _settings.ScreenshotColors;
         CaptureEngine.CollectWindowContext = _settings.CollectWindowContext;
 
+        // Память на голоса читается один раз при запуске: она общая для всех встреч.
+        _voices = new VoicePrintStore();
+
         CreateDialogOwner();
         SetupTray();
         SetupHotkeys();
@@ -556,6 +559,10 @@ public partial class App : Application
                 Dispatcher.BeginInvoke(() => ShowScreenshotConfirmation(bitmap, title));
         }
 
+        // Модель отпечатков загружается один раз на сессию: держать её в памяти дешевле,
+        // чем поднимать на каждую фразу.
+        _embedder = new VoiceEmbedder(_settings.ModelsRoot);
+
         _asr = new AsrEngine(_store, _audio, _settings.ModelsRoot,
             AsrModelCatalog.FindById(_settings.LiveModelId) ?? AsrModelCatalog.GigaAmCtc);
 
@@ -569,8 +576,29 @@ public partial class App : Application
         _controller.UserFacingError += message =>
             Dispatcher.BeginInvoke(() => _tray?.ShowBalloonTip("MeetMemo", message, BalloonIcon.Error));
 
-        _asr.SegmentRecognized += segment => Dispatcher.BeginInvoke(
-            () => _subtitles?.ShowLiveText(segment.Text));
+        _asr.SegmentRecognized += segment =>
+        {
+            // Отпечаток берём здесь же, в фоновом потоке распознавания: на фразу уходит
+            // 25–90 мс, и в поток интерфейса такую работу тащить незачем.
+            var recognized = RecognizeVoice(segment);
+
+            Dispatcher.BeginInvoke(() =>
+            {
+                _subtitles?.ShowLiveText(segment.Text);
+
+                if (segment.Channel == AudioChannel.Microphone)
+                {
+                    // Свой микрофон подтверждать не нужно — канал и так ваш.
+                    _subtitles?.ShowSpeaker("Вы", null, 1f);
+                    return;
+                }
+
+                if (recognized is { } hit)
+                    _subtitles?.ShowSpeaker(hit.Print.Display, hit.Print.Id, hit.Similarity);
+                else if (_lastEmbedding is not null)
+                    _subtitles?.ShowSpeaker("Голос незнаком", null, 0f);
+            });
+        };
 
         var result = await _controller.SendAsync(new SessionCommand.Start(request));
         if (!result.Accepted)
@@ -641,6 +669,58 @@ public partial class App : Application
     /// <summary>Субтитры распознавания внизу экрана. Живут только во время записи.</summary>
     private SubtitleOverlay? _subtitles;
 
+    /// <summary>Память на голоса: кто говорил на прошлых встречах и как их зовут.</summary>
+    private VoicePrintStore? _voices;
+
+    private VoiceEmbedder? _embedder;
+
+    /// <summary>
+    /// Отпечаток последней реплики. Нужен, когда человек называет говорящего: имя
+    /// приходит через несколько секунд после самой фразы, а запомнить надо именно её голос.
+    /// </summary>
+    private float[]? _lastEmbedding;
+
+    private (VoicePrint Print, float Similarity)? RecognizeVoice(RecognizedSegment segment)
+    {
+        if (segment.Channel == AudioChannel.Microphone) return null;
+        if (_embedder is null || !_embedder.Ready || _voices is null) return null;
+
+        try
+        {
+            var embedding = _embedder.Compute(segment.Samples);
+            if (embedding is null) return null;
+
+            _lastEmbedding = embedding;
+            return _voices.Recognize(embedding);
+        }
+        catch (Exception ex)
+        {
+            LogError("voice-recognize", ex);
+            return null;
+        }
+    }
+
+    /// <summary>Подтверждение догадки: голос запоминается крепче, узнавание становится увереннее.</summary>
+    private void OnSpeakerConfirmed(string printId)
+    {
+        if (_voices is null || _lastEmbedding is null) return;
+
+        var print = _voices.All.FirstOrDefault(p => p.Id == printId);
+        if (print is null) return;
+
+        _voices.Remember(print.Name, print.Role, _lastEmbedding);
+    }
+
+    /// <summary>Догадка неверна или голос незнаком — спрашиваем, кто это.</summary>
+    private void OnSpeakerRejected()
+    {
+        if (_voices is null || _lastEmbedding is null) return;
+
+        var embedding = _lastEmbedding;
+        var window = new VoiceNameWindow(_voices, embedding);
+        window.Show();
+    }
+
     /// <summary>Карточки автоснимков, ожидающих подтверждения.</summary>
     private ScreenshotConfirmWindow? _confirm;
 
@@ -706,7 +786,13 @@ public partial class App : Application
 
         try
         {
-            _subtitles ??= new SubtitleOverlay();
+            if (_subtitles is null)
+            {
+                _subtitles = new SubtitleOverlay();
+                _subtitles.SpeakerConfirmed += OnSpeakerConfirmed;
+                _subtitles.SpeakerRejected += OnSpeakerRejected;
+            }
+
             _subtitles.Reset();
             _subtitles.Show();
         }
@@ -841,6 +927,9 @@ public partial class App : Application
 
         _asr?.Dispose();
         _asr = null;
+        _embedder?.Dispose();
+        _embedder = null;
+        _lastEmbedding = null;
         _capture?.Dispose();
         _capture = null;
         _audio?.Dispose();
@@ -1102,6 +1191,13 @@ public partial class App : Application
             UseShellExecute = true
         });
     }
+
+    private void OnVoiceLibraryClick(object sender, RoutedEventArgs e) =>
+        DeferToUi(() =>
+        {
+            _voices ??= new VoicePrintStore();
+            new VoiceLibraryWindow(_voices).Show();
+        });
 
     private void OnCheckModelsClick(object sender, RoutedEventArgs e)
     {

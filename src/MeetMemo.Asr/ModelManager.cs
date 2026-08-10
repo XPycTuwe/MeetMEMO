@@ -23,7 +23,11 @@ public sealed class ModelManager
 
     public ModelManager(string? modelsRoot = null, ILogger? log = null)
     {
-        _modelsRoot = modelsRoot ?? AsrModelCatalog.DefaultModelsRoot;
+        // Пустая строка — тоже «не задано»: иначе путь получается относительным,
+        // модели ищутся рядом с исполняемым файлом и не находятся никогда.
+        _modelsRoot = string.IsNullOrWhiteSpace(modelsRoot)
+            ? AsrModelCatalog.DefaultModelsRoot
+            : modelsRoot;
         _log = log ?? NullLogger.Instance;
     }
 

@@ -45,6 +45,28 @@
                 <TextBlock x:Name="CurrentLine" Text="слушаю…"
                            FontFamily="Segoe UI" FontSize="15" Foreground="#FFF3F6FA"
                            TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+
+                <!-- Кто говорит и подтверждение. Строка появляется только когда голос
+                     узнан или ждёт имени: в остальное время она бы только мешала. -->
+                <StackPanel x:Name="SpeakerRow" Orientation="Horizontal" Visibility="Collapsed"
+                            Margin="0,7,0,0" HorizontalAlignment="Right">
+                    <TextBlock x:Name="SpeakerName" Text=""
+                               FontFamily="Segoe UI" FontSize="19" FontWeight="SemiBold"
+                               Foreground="#FF7FD1A8" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="420" />
+
+                    <Border x:Name="ConfirmButton" Background="#4D7FD1A8" CornerRadius="4"
+                            Padding="9,3" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Это он" FontFamily="Segoe UI" FontSize="12"
+                                   Foreground="#FFEAFBF3" />
+                    </Border>
+
+                    <Border x:Name="RejectButton" Background="#40FFFFFF" CornerRadius="4"
+                            Padding="9,3" Margin="6,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="RejectLabel" Text="Не он"
+                                   FontFamily="Segoe UI" FontSize="12" Foreground="#FFF3F6FA" />
+                    </Border>
+                </StackPanel>
             </StackPanel>
         </StackPanel>
     </Border>

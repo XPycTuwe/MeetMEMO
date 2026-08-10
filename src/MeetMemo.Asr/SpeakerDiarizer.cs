@@ -26,7 +26,9 @@ public sealed class SpeakerDiarizer
 
     public SpeakerDiarizer(string? modelsRoot = null, ILogger? log = null)
     {
-        _modelsRoot = modelsRoot ?? AsrModelCatalog.DefaultModelsRoot;
+        _modelsRoot = string.IsNullOrWhiteSpace(modelsRoot)
+            ? AsrModelCatalog.DefaultModelsRoot
+            : modelsRoot;
         _log = log ?? NullLogger.Instance;
     }
 

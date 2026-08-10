@@ -1,0 +1,47 @@
+<Window x:Class="MeetMemo.App.VoiceNameWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Кто это говорит?"
+        Icon="Assets/app.ico"
+        Width="440" SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Topmost="True"
+        Background="#FFF7F8FA">
+    <StackPanel Margin="18">
+        <TextBlock Text="Кто это говорит?"
+                   FontFamily="Segoe UI" FontSize="18" FontWeight="SemiBold" Foreground="#FF1F2937" />
+        <TextBlock x:Name="HintText"
+                   Text="Голос запомнится, и на следующих встречах имя подставится само."
+                   FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085"
+                   TextWrapping="Wrap" Margin="0,4,0,14" />
+
+        <TextBlock Text="Имя" FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085" />
+        <TextBox x:Name="NameBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13" Margin="0,3,0,10" />
+
+        <TextBlock Text="Должность или роль — необязательно"
+                   FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085" />
+        <TextBox x:Name="RoleBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13" Margin="0,3,0,4" />
+
+        <TextBlock Text="Попадёт в мемо: «Иванов — руководитель проекта поручил…»"
+                   FontFamily="Segoe UI" FontSize="11" Foreground="#FF98A2B3"
+                   TextWrapping="Wrap" Margin="0,0,0,8" />
+
+        <!-- Список знакомых: если человек уже записан, выбрать его надёжнее,
+             чем вводить имя заново и плодить двойников. -->
+        <TextBlock x:Name="KnownLabel" Text="Или выберите из знакомых:"
+                   FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085"
+                   Visibility="Collapsed" />
+        <ComboBox x:Name="KnownBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13"
+                  Margin="0,3,0,0" Visibility="Collapsed"
+                  SelectionChanged="OnKnownSelected" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="CancelButton" Content="Отмена" Padding="14,6" Margin="0,0,8,0"
+                    FontFamily="Segoe UI" FontSize="13" Click="OnCancelClick" />
+            <Button x:Name="SaveButton" Content="Запомнить" Padding="18,6"
+                    FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                    IsDefault="True" Click="OnSaveClick" />
+        </StackPanel>
+    </StackPanel>
+</Window>

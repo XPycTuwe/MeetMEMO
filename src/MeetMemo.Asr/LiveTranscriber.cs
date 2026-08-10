@@ -7,9 +7,14 @@ using SherpaOnnx;
 
 namespace MeetMemo.Asr;
 
-/// <summary>Готовый к записи результат распознавания одной фразы.</summary>
+/// <summary>
+/// Готовый к записи результат распознавания одной фразы.
+///
+/// Вместе с текстом отдаются и сами отсчёты: по ним берётся отпечаток голоса, чтобы
+/// узнать говорящего. Массив не копируется — читающий не должен его менять.
+/// </summary>
 public sealed record RecognizedSegment(
-    AudioChannel Channel, long StartMs, long EndMs, string Text);
+    AudioChannel Channel, long StartMs, long EndMs, string Text, float[] Samples);
 
 /// <summary>
 /// Живая стенограмма на готовом движке sherpa-onnx: Silero VAD режет поток на фразы,
@@ -218,7 +223,7 @@ public sealed class LiveTranscriber : IDisposable
 
             if (!string.IsNullOrWhiteSpace(text))
                 SegmentReady?.Invoke(new RecognizedSegment(
-                    item.Channel, item.StartMs, item.EndMs, text));
+                    item.Channel, item.StartMs, item.EndMs, text, item.Samples));
         }
         catch (Exception ex)
         {
