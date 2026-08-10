@@ -24,6 +24,13 @@ public sealed record VoicePrint
     [JsonPropertyName("embedding")]
     public required float[] Embedding { get; init; }
 
+    /// <summary>
+    /// Короткий образец речи рядом с базой. Отпечаток — 512 чисел, на слух его не проверить;
+    /// а услышав фразу, человек сразу понимает, тот это голос или нет.
+    /// </summary>
+    [JsonPropertyName("sample_file")]
+    public string? SampleFile { get; init; }
+
     [JsonPropertyName("created_utc")]
     public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.UtcNow;
 
@@ -154,7 +161,8 @@ public sealed class VoicePrintStore
     /// уточняется усреднением: с каждым подтверждением узнавание становится увереннее,
     /// а разовая случайная запись не перебивает накопленное.
     /// </summary>
-    public VoicePrint Remember(string name, string? role, float[] embedding)
+    public VoicePrint Remember(string name, string? role, float[] embedding,
+        float[]? sampleAudio = null, int sampleRate = 16000)
     {
         // Пустой отпечаток запомнить нельзя: он совпадёт с чем угодно и начнёт
         // приписывать это имя посторонним голосам.
@@ -174,7 +182,12 @@ public sealed class VoicePrintStore
                 {
                     Role = string.IsNullOrWhiteSpace(role) ? existing.Role : role,
                     Embedding = merged,
-                    Confirmations = existing.Confirmations + 1
+                    Confirmations = existing.Confirmations + 1,
+
+                    // Образец обновляем, только если старого нет: первая запомненная
+                    // фраза обычно чище — её называли осознанно.
+                    SampleFile = existing.SampleFile
+                        ?? SaveSample(existing.Id, sampleAudio, sampleRate)
                 };
 
                 _prints[_prints.IndexOf(existing)] = updated;
@@ -182,12 +195,14 @@ public sealed class VoicePrintStore
                 return updated;
             }
 
+            var id = Guid.NewGuid().ToString("N")[..8];
             var print = new VoicePrint
             {
-                Id = Guid.NewGuid().ToString("N")[..8],
+                Id = id,
                 Name = name,
                 Role = role,
-                Embedding = embedding
+                Embedding = embedding,
+                SampleFile = SaveSample(id, sampleAudio, sampleRate)
             };
 
             _prints.Add(print);
@@ -213,11 +228,75 @@ public sealed class VoicePrintStore
 
     public bool Forget(string id)
     {
-        bool removed;
-        lock (_gate) removed = _prints.RemoveAll(p => p.Id == id) > 0;
+        string? sample = null;
 
-        if (removed) Save();
-        return removed;
+        bool removed;
+        lock (_gate)
+        {
+            sample = _prints.FirstOrDefault(p => p.Id == id)?.SampleFile;
+            removed = _prints.RemoveAll(p => p.Id == id) > 0;
+        }
+
+        if (!removed) return false;
+
+        // «Забыть» должно стирать и запись голоса, а не только имя: иначе на диске
+        // остаётся речь человека, которого мы обещали забыть.
+        if (sample is not null)
+        {
+            try { if (File.Exists(sample)) File.Delete(sample); } catch (IOException) { }
+        }
+
+        Save();
+        return true;
+    }
+
+    /// <summary>Папка с образцами речи — рядом с самой базой голосов.</summary>
+    public string SamplesDirectory => System.IO.Path.Combine(
+        System.IO.Path.GetDirectoryName(_path)!, "voices");
+
+    /// <summary>
+    /// Сохраняет короткий образец речи в WAV. Обрезаем до пяти секунд: для опознания
+    /// на слух этого с запасом, а гигабайты голосов коллег нам тут не нужны.
+    /// </summary>
+    private string? SaveSample(string id, float[]? samples, int sampleRate)
+    {
+        if (samples is null || samples.Length == 0) return null;
+
+        try
+        {
+            Directory.CreateDirectory(SamplesDirectory);
+            var file = System.IO.Path.Combine(SamplesDirectory, id + ".wav");
+
+            var count = Math.Min(samples.Length, sampleRate * 5);
+
+            using var stream = File.Create(file);
+            using var writer = new BinaryWriter(stream);
+
+            var dataBytes = count * 2;
+            writer.Write("RIFF"u8.ToArray());
+            writer.Write(36 + dataBytes);
+            writer.Write("WAVE"u8.ToArray());
+            writer.Write("fmt "u8.ToArray());
+            writer.Write(16);
+            writer.Write((short)1);                       // PCM
+            writer.Write((short)1);                       // моно
+            writer.Write(sampleRate);
+            writer.Write(sampleRate * 2);                 // байт в секунду
+            writer.Write((short)2);                       // выравнивание блока
+            writer.Write((short)16);                      // бит на отсчёт
+            writer.Write("data"u8.ToArray());
+            writer.Write(dataBytes);
+
+            for (var i = 0; i < count; i++)
+                writer.Write((short)(Math.Clamp(samples[i], -1f, 1f) * short.MaxValue));
+
+            return file;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Не удалось сохранить образец голоса");
+            return null;
+        }
     }
 
     /// <summary>

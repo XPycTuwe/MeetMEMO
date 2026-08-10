@@ -680,6 +680,9 @@ public partial class App : Application
     /// </summary>
     private float[]? _lastEmbedding;
 
+    /// <summary>Сама фраза — её дают послушать, чтобы опознать голос на слух.</summary>
+    private float[]? _lastSamples;
+
     private (VoicePrint Print, float Similarity)? RecognizeVoice(RecognizedSegment segment)
     {
         if (segment.Channel == AudioChannel.Microphone) return null;
@@ -691,6 +694,7 @@ public partial class App : Application
             if (embedding is null) return null;
 
             _lastEmbedding = embedding;
+            _lastSamples = segment.Samples;
             return _voices.Recognize(embedding);
         }
         catch (Exception ex)
@@ -708,7 +712,7 @@ public partial class App : Application
         var print = _voices.All.FirstOrDefault(p => p.Id == printId);
         if (print is null) return;
 
-        _voices.Remember(print.Name, print.Role, _lastEmbedding);
+        _voices.Remember(print.Name, print.Role, _lastEmbedding, _lastSamples);
     }
 
     /// <summary>Догадка неверна или голос незнаком — спрашиваем, кто это.</summary>
@@ -716,8 +720,7 @@ public partial class App : Application
     {
         if (_voices is null || _lastEmbedding is null) return;
 
-        var embedding = _lastEmbedding;
-        var window = new VoiceNameWindow(_voices, embedding);
+        var window = new VoiceNameWindow(_voices, _lastEmbedding, _lastSamples);
         window.Show();
     }
 

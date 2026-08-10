@@ -1,6 +1,8 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using MeetMemo.Asr;
+using MeetMemo.Audio;
 
 namespace MeetMemo.App;
 
@@ -15,13 +17,22 @@ public partial class VoiceLibraryWindow : Window
 {
     private readonly VoicePrintStore _store;
 
-    private sealed record Row(string Id, string Name, string? Role, int Confirmations, string Since);
+    private readonly SamplePlayer _player = new();
+
+    private sealed record Row(
+        string Id, string Name, string? Role, int Confirmations, string Since,
+        string? SampleFile)
+    {
+        public string HasSample => SampleFile is not null ? "есть" : "—";
+    }
 
     public VoiceLibraryWindow(VoicePrintStore store)
     {
         InitializeComponent();
         _store = store;
         Reload();
+
+        Closed += (_, _) => _player.Dispose();
     }
 
     private void Reload()
@@ -30,7 +41,8 @@ public partial class VoiceLibraryWindow : Window
             .OrderBy(p => p.Name)
             .Select(p => new Row(
                 p.Id, p.Name, p.Role, p.Confirmations,
-                p.CreatedUtc.ToLocalTime().ToString("dd.MM.yyyy")))
+                p.CreatedUtc.ToLocalTime().ToString("dd.MM.yyyy"),
+                p.SampleFile))
             .ToList();
 
         VoiceList.ItemsSource = rows;
@@ -47,6 +59,7 @@ public partial class VoiceLibraryWindow : Window
         if (VoiceList.SelectedItem is not Row row)
         {
             NameBox.IsEnabled = RoleBox.IsEnabled = SaveButton.IsEnabled = ForgetButton.IsEnabled = false;
+            PlayButton.IsEnabled = false;
             NameBox.Text = RoleBox.Text = string.Empty;
             return;
         }
@@ -54,6 +67,23 @@ public partial class VoiceLibraryWindow : Window
         NameBox.Text = row.Name;
         RoleBox.Text = row.Role ?? string.Empty;
         NameBox.IsEnabled = RoleBox.IsEnabled = SaveButton.IsEnabled = ForgetButton.IsEnabled = true;
+
+        // Слушать нечего у голосов, запомненных до появления образцов.
+        PlayButton.IsEnabled = row.SampleFile is not null && File.Exists(row.SampleFile);
+    }
+
+    private void OnPlayClick(object sender, RoutedEventArgs e)
+    {
+        if (VoiceList.SelectedItem is not Row { SampleFile: { } file }) return;
+
+        try
+        {
+            _player.Play(file);
+        }
+        catch (Exception)
+        {
+            SubtitleText.Text = "Не удалось воспроизвести — проверьте устройство вывода звука.";
+        }
     }
 
     private void OnSaveClick(object sender, RoutedEventArgs e)

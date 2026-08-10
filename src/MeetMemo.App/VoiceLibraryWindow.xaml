@@ -32,7 +32,8 @@
                     <GridViewColumn Header="Должность" Width="230" DisplayMemberBinding="{Binding Role}" />
                     <GridViewColumn Header="Подтверждений" Width="110"
                                     DisplayMemberBinding="{Binding Confirmations}" />
-                    <GridViewColumn Header="Запомнен" Width="110" DisplayMemberBinding="{Binding Since}" />
+                    <GridViewColumn Header="Запомнен" Width="100" DisplayMemberBinding="{Binding Since}" />
+                    <GridViewColumn Header="Образец" Width="80" DisplayMemberBinding="{Binding HasSample}" />
                 </GridView>
             </ListView.View>
         </ListView>
@@ -49,6 +50,9 @@
         </StackPanel>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <!-- Послушать образец: проверить на слух, того ли человека помним -->
+            <Button x:Name="PlayButton" Content="▶  Прослушать" Padding="14,6" Margin="0,0,8,0"
+                    FontFamily="Segoe UI" FontSize="13" IsEnabled="False" Click="OnPlayClick" />
             <Button x:Name="ForgetButton" Content="Забыть голос" Padding="14,6" Margin="0,0,8,0"
                     FontFamily="Segoe UI" FontSize="13" IsEnabled="False" Click="OnForgetClick" />
             <Button x:Name="SaveButton" Content="Сохранить" Padding="18,6"

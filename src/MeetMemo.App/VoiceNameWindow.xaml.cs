@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using MeetMemo.Asr;
+using MeetMemo.Audio;
 
 namespace MeetMemo.App;
 
@@ -15,13 +16,22 @@ public partial class VoiceNameWindow : Window
 {
     private readonly VoicePrintStore _store;
     private readonly float[] _embedding;
+    private readonly float[]? _audio;
+    private readonly SamplePlayer _player = new();
 
-    public VoiceNameWindow(VoicePrintStore store, float[] embedding, string? suggestedName = null)
+    public VoiceNameWindow(
+        VoicePrintStore store, float[] embedding, float[]? audio = null, string? suggestedName = null)
     {
         InitializeComponent();
 
         _store = store;
         _embedding = embedding;
+        _audio = audio;
+
+        // Нечего играть — незачем и предлагать.
+        if (_audio is null || _audio.Length == 0) PlayButton.Visibility = Visibility.Collapsed;
+
+        Closed += (_, _) => _player.Dispose();
 
         NameBox.Text = suggestedName ?? string.Empty;
 
@@ -57,8 +67,25 @@ public partial class VoiceNameWindow : Window
         }
 
         var role = RoleBox.Text.Trim();
-        _store.Remember(name, role.Length > 0 ? role : null, _embedding);
+
+        // Вместе с отпечатком кладём и саму фразу: позже её можно будет переслушать
+        // и проверить, того ли человека мы помним.
+        _store.Remember(name, role.Length > 0 ? role : null, _embedding, _audio);
         Close();
+    }
+
+    private void OnPlayClick(object sender, RoutedEventArgs e)
+    {
+        if (_audio is null) return;
+
+        try
+        {
+            _player.Play(_audio);
+        }
+        catch (Exception)
+        {
+            HintText.Text = "Не удалось воспроизвести — проверьте устройство вывода звука.";
+        }
     }
 
     private void OnCancelClick(object sender, RoutedEventArgs e) => Close();

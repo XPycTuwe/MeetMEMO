@@ -14,7 +14,13 @@
         <TextBlock x:Name="HintText"
                    Text="Голос запомнится, и на следующих встречах имя подставится само."
                    FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085"
-                   TextWrapping="Wrap" Margin="0,4,0,14" />
+                   TextWrapping="Wrap" Margin="0,4,0,10" />
+
+        <!-- Послушать перед тем, как назвать: по 512 числам отпечатка человека
+             не опознать, а по фразе — сразу. -->
+        <Button x:Name="PlayButton" Content="▶  Прослушать фразу" Padding="12,6"
+                HorizontalAlignment="Left" Margin="0,0,0,14"
+                FontFamily="Segoe UI" FontSize="13" Click="OnPlayClick" />
 
         <TextBlock Text="Имя" FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085" />
         <TextBox x:Name="NameBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13" Margin="0,3,0,10" />
