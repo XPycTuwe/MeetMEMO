@@ -32,6 +32,14 @@ public sealed record TranscriptSegment
     /// <summary>Движок, выдавший сегмент: sherpa-onnx (live) или whisper.net (финальный проход).</summary>
     [JsonPropertyName("engine")]
     public string? Engine { get; init; }
+
+    /// <summary>
+    /// Кто говорит: «spk1», «spk2»… — голоса, различённые диаризацией в звуке приложения.
+    /// Это метки тембров, а не имена: имя можно узнать только из самой речи. У сегментов
+    /// микрофона всегда null — этот канал целиком принадлежит владельцу компьютера.
+    /// </summary>
+    [JsonPropertyName("speaker")]
+    public string? Speaker { get; init; }
 }
 
 /// <summary>Тип снимка (ТЗ 9.1).</summary>

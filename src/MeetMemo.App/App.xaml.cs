@@ -820,6 +820,12 @@ public partial class App : Application
             var window = new CompletionWindow(result, _settings);
             window.Show();
 
+            // Различение собеседников идёт после карточки, в фоне: на часовой записи это
+            // минуты, и держать человека у пустого экрана ради него нельзя. Когда закончится,
+            // стенограмма уже размечена — а если ZIP собрали раньше, его можно пересобрать
+            // из «Последних встреч».
+            _ = AnnotateSpeakersAsync(result.FolderPath);
+
             await DisposeSessionAsync();
         });
     }
@@ -975,6 +981,32 @@ public partial class App : Application
         catch (Exception ex)
         {
             LogError("save-title-bar-offset", ex);
+        }
+    }
+
+    /// <summary>
+    /// Размечает, кто из собеседников говорит, — по тембрам в звуке приложения.
+    /// Ошибка разметки не трогает пакет: стенограмма остаётся как была.
+    /// </summary>
+    private async Task AnnotateSpeakersAsync(string folderPath)
+    {
+        try
+        {
+            var diarizer = new SpeakerDiarizer(_settings.ModelsRoot);
+            if (!diarizer.ModelsInstalled) return;
+
+            var speakers = await diarizer.AnnotateMeetingAsync(folderPath);
+
+            if (speakers >= 2)
+            {
+                _tray?.ShowBalloonTip("MeetMemo",
+                    $"В записи различено голосов: {speakers}. Стенограмма размечена по собеседникам.",
+                    BalloonIcon.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError("diarize", ex);
         }
     }
 

@@ -92,10 +92,54 @@ public static class AsrModelCatalog
         ]
     };
 
+    /// <summary>
+    /// Сегментация речи для диаризации: где кто-то начинает и заканчивает говорить.
+    /// Kind здесь формальность, как и у VAD: движок настраивается не по нему.
+    /// </summary>
+    public static readonly AsrModelDescriptor PyannoteSegmentation = new()
+    {
+        Id = "pyannote-segmentation-3-0",
+        DisplayName = "Pyannote segmentation 3.0",
+        Kind = AsrModelKind.NemoCtc,
+        FolderName = "pyannote-segmentation-3-0",
+        ModelFile = "model.onnx",
+        TokensFile = "model.onnx",
+        License = "MIT",
+        Notes = "Разметка «кто когда говорит» для различения собеседников.",
+        Files =
+        [
+            new ModelFile(
+                "model.onnx",
+                "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.onnx",
+                6_100_000)
+        ]
+    };
+
+    /// <summary>Отпечаток голоса: по нему сегменты группируются в «собеседник 1, 2, …».</summary>
+    public static readonly AsrModelDescriptor SpeakerEmbedding = new()
+    {
+        Id = "3dspeaker-eres2net-base",
+        DisplayName = "3D-Speaker ERes2Net — отпечатки голосов",
+        Kind = AsrModelKind.NemoCtc,
+        FolderName = "3dspeaker-eres2net-base",
+        ModelFile = "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+        TokensFile = "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+        License = "Apache-2.0",
+        Notes = "Различение голосов не зависит от языка речи.",
+        Files =
+        [
+            new ModelFile(
+                "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+                "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+                26_000_000)
+        ]
+    };
+
     public static IReadOnlyList<AsrModelDescriptor> LiveModels => new[] { GigaAmCtc };
 
-    /// <summary>Всё, что нужно скачать для работы живой стенограммы.</summary>
-    public static IReadOnlyList<AsrModelDescriptor> Required => new[] { GigaAmCtc, SileroVad };
+    /// <summary>Всё, что нужно скачать: живая стенограмма плюс различение собеседников.</summary>
+    public static IReadOnlyList<AsrModelDescriptor> Required =>
+        new[] { GigaAmCtc, SileroVad, PyannoteSegmentation, SpeakerEmbedding };
 
     public static AsrModelDescriptor? FindById(string id) =>
         Required.FirstOrDefault(m => m.Id == id);

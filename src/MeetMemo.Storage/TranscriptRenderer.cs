@@ -44,11 +44,14 @@ public static class TranscriptRenderer
             foreach (var seg in segments)
             {
                 var stamp = FormatTimecode(seg.StartMs);
-                var who = seg.Source switch
+
+                // «Собеседник N» — голос, различённый диаризацией; без неё остаётся канал.
+                var who = seg switch
                 {
-                    AudioChannel.Microphone => "Микрофон",
-                    AudioChannel.Application => "Приложение",
-                    AudioChannel.System => "Система",
+                    { Source: AudioChannel.Microphone } => "Микрофон",
+                    { Speaker: { } spk } when TryParseSpeaker(spk, out var n) => $"Собеседник {n}",
+                    { Source: AudioChannel.Application } => "Приложение",
+                    { Source: AudioChannel.System } => "Система",
                     _ => seg.Source.ToString()
                 };
                 sb.AppendLine($"**[{stamp}] {who}:** {seg.Text}");
@@ -59,6 +62,11 @@ public static class TranscriptRenderer
         File.WriteAllText(folder.TranscriptMd, sb.ToString(), new UTF8Encoding(false));
         return segments.Count;
     }
+
+    private static bool TryParseSpeaker(string speaker, out int number) =>
+        int.TryParse(
+            speaker.StartsWith("spk", StringComparison.OrdinalIgnoreCase) ? speaker[3..] : speaker,
+            out number);
 
     public static string FormatTimecode(long ms)
     {
