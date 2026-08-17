@@ -13,6 +13,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <TextBlock x:Name="HeaderText" Grid.Row="0" Text="Встреча записана"
@@ -46,7 +47,20 @@
             </ScrollViewer>
         </Border>
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <!-- Пока идёт разбор, архив собирать рано: в нём не будет ни имён говорящих,
+             ни склеенных дублей снимков. Полоса показывает, что работа не встала. -->
+        <StackPanel x:Name="ProcessingPanel" Grid.Row="3" Margin="0,14,0,0" Visibility="Collapsed">
+            <TextBlock x:Name="ProcessingText" Text=""
+                       FontFamily="Segoe UI" FontSize="13" Foreground="#FF1F2937" />
+            <TextBlock x:Name="ProcessingHint"
+                       Text="Архив станет полнее, если дождаться: в нём появятся имена собеседников."
+                       FontFamily="Segoe UI" FontSize="11" Foreground="#FF667085"
+                       TextWrapping="Wrap" Margin="0,3,0,6" />
+            <ProgressBar x:Name="ProcessingBar" Height="5" IsIndeterminate="True"
+                         Foreground="#FF2E74B5" Background="#FFE4E7EC" BorderThickness="0" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="Открыть папку" Padding="14,6" Margin="0,0,8,0"
                     FontFamily="Segoe UI" FontSize="13" Click="OnOpenFolderClick" />
             <Button x:Name="ZipButton" Content="Собрать ZIP для Claude" Padding="16,6"

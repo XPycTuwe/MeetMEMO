@@ -105,6 +105,46 @@ public partial class CompletionWindow : Window
         }
     }
 
+    /// <summary>
+    /// Показывает, что пакет ещё дорабатывается: идёт разбор голосов и склейка дублей
+    /// снимков. Кнопка архива при этом не блокируется — бывает, что мемо нужно прямо
+    /// сейчас, — но человек видит, чего лишится, если поторопится.
+    /// </summary>
+    public void ShowProcessing(string what)
+    {
+        ProcessingPanel.Visibility = Visibility.Visible;
+        ProcessingText.Text = what;
+        ZipButton.Content = "Собрать ZIP сейчас";
+    }
+
+    /// <summary>Обработка закончена: состав пакета пересчитываем — он изменился.</summary>
+    public void ProcessingFinished(string summary)
+    {
+        ProcessingBar.IsIndeterminate = false;
+        ProcessingBar.Value = 100;
+        ProcessingText.Text = summary;
+        ProcessingHint.Text = "Пакет готов полностью.";
+        ZipButton.Content = "Собрать ZIP";
+
+        RefreshFileList();
+    }
+
+    private void RefreshFileList()
+    {
+        try
+        {
+            var plan = ExportPlanBuilder.Build(_result.FolderPath, _settings.IncludeAudioInExport);
+            FilesList.ItemsSource = plan.Items
+                .Where(i => i.Included)
+                .Select(i => $"{i.RelativePath}  ({ExportPlan.FormatSize(i.SizeBytes)})")
+                .ToList();
+        }
+        catch (Exception)
+        {
+            // Список — справочный: если пересчитать не вышло, окно должно остаться рабочим.
+        }
+    }
+
     private static string FormatDuration(TimeSpan ts) =>
         ts.Hours > 0 ? $"{ts.Hours} ч {ts.Minutes} мин" : $"{ts.Minutes} мин {ts.Seconds} с";
 

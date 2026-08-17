@@ -910,11 +910,10 @@ public partial class App : Application
             var window = new CompletionWindow(result, _settings);
             window.Show();
 
-            // Различение собеседников идёт после карточки, в фоне: на часовой записи это
-            // минуты, и держать человека у пустого экрана ради него нельзя. Когда закончится,
-            // стенограмма уже размечена — а если ZIP собрали раньше, его можно пересобрать
-            // из «Последних встреч».
-            _ = AnnotateSpeakersAsync(result.FolderPath);
+            // Доработка идёт после карточки, в фоне: на часовой записи это минуты, и держать
+            // человека у пустого экрана ради неё нельзя. Но и молчать нельзя — иначе он
+            // соберёт архив раньше времени и не поймёт, почему там нет имён.
+            _ = FinishPackageAsync(result.FolderPath, window);
 
             await DisposeSessionAsync();
         });
@@ -1078,29 +1077,54 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Размечает, кто из собеседников говорит, — по тембрам в звуке приложения.
-    /// Ошибка разметки не трогает пакет: стенограмма остаётся как была.
+    /// Доводит пакет до готовности после остановки записи: склеивает одинаковые снимки
+    /// и размечает говорящих. Обе операции идут после того, как папка уже полна и годна —
+    /// поэтому их сбой ничего не ломает, пакет просто останется чуть менее удобным.
     /// </summary>
-    private async Task AnnotateSpeakersAsync(string folderPath)
+    private async Task FinishPackageAsync(string folderPath, CompletionWindow? window)
     {
+        var report = new List<string>();
+
+        try
+        {
+            window?.ShowProcessing("Убираю повторяющиеся снимки…");
+
+            var dedupe = await Task.Run(() => ScreenshotDeduplicator.Deduplicate(folderPath));
+            if (dedupe.Removed > 0)
+            {
+                report.Add($"склеено одинаковых снимков: {dedupe.Removed} "
+                         + $"({Export.ExportPlan.FormatSize(dedupe.FreedBytes)})");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError("dedupe-screenshots", ex);
+        }
+
         try
         {
             var diarizer = new SpeakerDiarizer(_settings.ModelsRoot);
-            if (!diarizer.ModelsInstalled) return;
-
-            var speakers = await diarizer.AnnotateMeetingAsync(folderPath);
-
-            if (speakers >= 2)
+            if (diarizer.ModelsInstalled)
             {
-                _tray?.ShowBalloonTip("MeetMemo",
-                    $"В записи различено голосов: {speakers}. Стенограмма размечена по собеседникам.",
-                    BalloonIcon.Info);
+                window?.ShowProcessing("Разбираю, кто из собеседников говорил…");
+
+                var speakers = await diarizer.AnnotateMeetingAsync(folderPath);
+                if (speakers >= 2) report.Add($"различено голосов: {speakers}");
             }
         }
         catch (Exception ex)
         {
             LogError("diarize", ex);
         }
+
+        var summary = report.Count > 0
+            ? "Готово — " + string.Join(", ", report) + "."
+            : "Готово: дорабатывать было нечего.";
+
+        window?.ProcessingFinished(summary);
+
+        if (report.Count > 0)
+            _tray?.ShowBalloonTip("MeetMemo — пакет готов", summary, BalloonIcon.Info);
     }
 
     /// <summary>

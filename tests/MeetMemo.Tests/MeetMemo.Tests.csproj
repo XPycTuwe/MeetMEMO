@@ -12,6 +12,7 @@
     <ProjectReference Include="..\..\src\MeetMemo.Storage\MeetMemo.Storage.csproj" />
     <ProjectReference Include="..\..\src\MeetMemo.Audio\MeetMemo.Audio.csproj" />
     <ProjectReference Include="..\..\src\MeetMemo.Asr\MeetMemo.Asr.csproj" />
+    <ProjectReference Include="..\..\src\MeetMemo.Capture\MeetMemo.Capture.csproj" />
     <ProjectReference Include="..\..\src\MeetMemo.Export\MeetMemo.Export.csproj" />
   </ItemGroup>
 

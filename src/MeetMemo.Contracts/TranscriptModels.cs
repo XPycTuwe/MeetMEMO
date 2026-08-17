@@ -94,6 +94,14 @@ public sealed record ScreenshotEntry
     [JsonPropertyName("trigger")]
     public string? Trigger { get; init; }
 
+    /// <summary>
+    /// Когда ещё показывали ровно этот кадр, в миллисекундах от начала встречи.
+    /// Докладчик возвращается к слайду по нескольку раз, и раньше это давало три-пять
+    /// одинаковых файлов. Теперь файл один, а моменты показа перечислены здесь.
+    /// </summary>
+    [JsonPropertyName("also_shown_at_ms")]
+    public IReadOnlyList<long>? AlsoShownAtMs { get; init; }
+
     [JsonPropertyName("application")]
     public string? Application { get; init; }
 
