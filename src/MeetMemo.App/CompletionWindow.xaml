@@ -60,15 +60,33 @@
                          Foreground="#FF2E74B5" Background="#FFE4E7EC" BorderThickness="0" />
         </StackPanel>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="Открыть папку" Padding="14,6" Margin="0,0,8,0"
-                    FontFamily="Segoe UI" FontSize="13" Click="OnOpenFolderClick" />
-            <Button x:Name="ZipButton" Content="Собрать ZIP для Claude" Padding="16,6"
-                    FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
-                    Click="OnCreateZipClick" />
-            <Button Content="Закрыть" Padding="14,6" Margin="8,0,0,0"
-                    FontFamily="Segoe UI" FontSize="13" IsCancel="True"
-                    Click="OnCloseClick" />
-        </StackPanel>
+        <Grid Grid.Row="4" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Переименование и удаление слева, подальше от кнопки архива:
+                 «удалить» рядом с тем, что нажимают не глядя, — плохая идея. -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button Content="Переименовать" Padding="14,6" Margin="0,0,8,0"
+                        FontFamily="Segoe UI" FontSize="13" Click="OnRenameClick" />
+                <Button Content="Удалить" Padding="14,6"
+                        FontFamily="Segoe UI" FontSize="13" Foreground="#FFB42318"
+                        Click="OnDeleteClick" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button Content="Открыть папку" Padding="14,6" Margin="0,0,8,0"
+                        FontFamily="Segoe UI" FontSize="13" Click="OnOpenFolderClick" />
+                <Button x:Name="ZipButton" Content="Собрать ZIP" Padding="16,6"
+                        FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                        Click="OnCreateZipClick" />
+                <Button Content="Закрыть" Padding="14,6" Margin="8,0,0,0"
+                        FontFamily="Segoe UI" FontSize="13" IsCancel="True"
+                        Click="OnCloseClick" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

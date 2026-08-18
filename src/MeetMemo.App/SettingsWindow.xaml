@@ -218,6 +218,19 @@
 
                 <ListView x:Name="MeetingList" Grid.Row="1" MouseDoubleClick="OnMeetingDoubleClick"
                           SelectionChanged="OnMeetingSelected">
+                    <!-- Правая кнопка: всё, что делают со встречей, под рукой в списке -->
+                    <ListView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Открыть карточку" FontWeight="SemiBold"
+                                      Click="OnOpenMeeting" />
+                            <MenuItem Header="Открыть папку" Click="OnOpenMeetingFolder" />
+                            <Separator />
+                            <MenuItem Header="Собрать ZIP" Click="OnBuildZip" />
+                            <MenuItem Header="Переименовать" Click="OnRenameMeeting" />
+                            <Separator />
+                            <MenuItem Header="Удалить встречу" Click="OnDeleteMeeting" />
+                        </ContextMenu>
+                    </ListView.ContextMenu>
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="Встреча" Width="450" DisplayMemberBinding="{Binding Name}" />

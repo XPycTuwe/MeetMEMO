@@ -438,4 +438,32 @@ public partial class SettingsWindow : Window
             UseShellExecute = true
         });
     }
+
+    private async void OnBuildZip(object sender, RoutedEventArgs e)
+    {
+        if (MeetingList.SelectedItem is not MeetingRow row) return;
+
+        await MeetingActions.BuildZipAsync(this, row.Path, _settings.IncludeAudioInExport);
+
+        // Архив ложится рядом с папкой встречи и на её размер не влияет, но список
+        // всё равно перечитываем: файлы внутри могли измениться.
+        LoadMeetings();
+    }
+
+    private void OnRenameMeeting(object sender, RoutedEventArgs e)
+    {
+        if (MeetingList.SelectedItem is not MeetingRow row) return;
+
+        var dialog = new RenameWindow(MeetingActions.ReadTitle(row.Path)) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Result is null) return;
+
+        if (MeetingActions.Rename(this, row.Path, dialog.Result) is not null) LoadMeetings();
+    }
+
+    private void OnDeleteMeeting(object sender, RoutedEventArgs e)
+    {
+        if (MeetingList.SelectedItem is not MeetingRow row) return;
+
+        if (MeetingActions.Delete(this, row.Path)) LoadMeetings();
+    }
 }

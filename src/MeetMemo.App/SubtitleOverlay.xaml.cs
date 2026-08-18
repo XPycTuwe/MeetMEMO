@@ -143,13 +143,18 @@ public partial class SubtitleOverlay : Window
 
     private const int VK_LBUTTON = 0x01;
 
+    /// <summary>
+    /// Правый нижний угол, а не центр экрана: посередине стенограмма ложилась поверх
+    /// кнопок самой встречи — микрофона, камеры, завершения звонка. У края она никому
+    /// не мешает, а движение строк всё равно попадает в поле зрения.
+    /// </summary>
     private void PlaceAtBottom()
     {
         var area = SystemParameters.WorkArea;
 
-        Width = Math.Min(980, area.Width * 0.78);
-        Left = area.Left + (area.Width - Width) / 2;
-        Top = area.Bottom - ActualHeight - 48;
+        Width = Math.Min(620, area.Width * 0.42);
+        Left = area.Right - Width - 24;
+        Top = area.Bottom - ActualHeight - 24;
     }
 
     /// <summary>Новая распознанная реплика в конец списка.</summary>

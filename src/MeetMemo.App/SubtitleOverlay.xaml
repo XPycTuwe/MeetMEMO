@@ -15,7 +15,7 @@
          Раньше строка была одна, и «назвать» можно было только последнего услышанного —
          а пока думаешь, кто это, он успевает договорить и начинает следующий. -->
     <Border Background="#B8000000" CornerRadius="10" Padding="14,10"
-            HorizontalAlignment="Center">
+            HorizontalAlignment="Right">
         <StackPanel>
             <ItemsControl x:Name="Lines">
                 <ItemsControl.ItemTemplate>
@@ -37,7 +37,7 @@
                             <TextBlock Grid.Column="1" Text="{Binding Text}"
                                        FontFamily="Segoe UI" FontSize="14"
                                        Foreground="{Binding TextBrush}"
-                                       TextWrapping="Wrap" MaxWidth="620" />
+                                       TextWrapping="Wrap" MaxWidth="430" />
 
                             <!-- Действие по конкретной фразе, а не по «последней» -->
                             <Border Grid.Column="2" Background="#40FFFFFF" CornerRadius="4"
