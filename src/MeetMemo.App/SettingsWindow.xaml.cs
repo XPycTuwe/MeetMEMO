@@ -382,7 +382,9 @@ public partial class SettingsWindow : Window
                 .Take(30)
                 .Select(d => new MeetingRow(
                     d.FullName,
-                    d.Name,
+                    // Название берём из манифеста, а не имя папки: папку мы намеренно
+                    // не переименовываем, и в списке осталось бы прежнее имя.
+                    MeetingActions.ReadTitle(d.FullName),
                     d.LastWriteTime.ToString("dd.MM.yyyy HH:mm"),
                     FormatSize(DirectorySize(d))))
                 .ToList();

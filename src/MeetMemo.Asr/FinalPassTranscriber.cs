@@ -212,6 +212,11 @@ public sealed class FinalPassTranscriber
 
         manifest = manifest with
         {
+            // Название перечитываем с диска: проход идёт минутами, и за это время
+            // встречу могли переименовать. Манифест, прочитанный в начале, вернул бы
+            // старое название обратно — тихо и незаметно.
+            Title = ReadCurrentTitle(folder) ?? manifest.Title,
+
             Transcription = manifest.Transcription with
             {
                 FinalPassCompleted = true,
@@ -225,5 +230,26 @@ public sealed class FinalPassTranscriber
 
         _log.LogInformation("Финальный проход завершён: {Count} сегментов", segments.Count);
         return segments.Count;
+    }
+
+    /// <summary>
+    /// Читает название встречи прямо из файла, минуя разобранный манифест: интересует
+    /// то, что там сейчас, а не то, что было в начале прохода.
+    /// </summary>
+    private static string? ReadCurrentTitle(MeetingFolder folder)
+    {
+        try
+        {
+            if (!File.Exists(folder.SessionJson)) return null;
+
+            var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(folder.SessionJson));
+            var title = node?["title"]?.GetValue<string>();
+
+            return string.IsNullOrWhiteSpace(title) ? null : title;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Windows.Input;
 using System.Windows;
 using MeetMemo.Contracts;
 using MeetMemo.Core;
@@ -32,6 +33,9 @@ public partial class CompletionWindow : Window
             SessionStatus.Failed => "Запись завершилась с ошибкой",
             _ => "Встреча записана"
         };
+
+        _currentTitle = MeetingActions.ReadTitle(result.FolderPath);
+        TitleBox.Text = _currentTitle;
 
         SummaryText.Text =
             $"Длительность: {FormatDuration(result.Duration)}   •   "
@@ -156,14 +160,55 @@ public partial class CompletionWindow : Window
 
     private void OnRenameClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new RenameWindow(MeetingActions.ReadTitle(_result.FolderPath)) { Owner = this };
-        if (dialog.ShowDialog() != true || dialog.Result is null) return;
+        // Кнопка просто ставит курсор в название: отдельный диалог ради одной строки
+        // здесь лишний, поле уже перед глазами.
+        TitleBox.Focus();
+        TitleBox.SelectAll();
+    }
 
-        if (!MeetingActions.Rename(this, _result.FolderPath, dialog.Result)) return;
+    /// <summary>
+    /// Сохраняет название, когда из поля ушли или нажали Enter. Молча ничего не делаем,
+    /// если название не изменилось: незачем переписывать манифест на каждый щелчок мимо.
+    /// </summary>
+    private void OnTitleCommitted(object sender, RoutedEventArgs e)
+    {
+        var title = TitleBox.Text.Trim();
 
-        HeaderText.Text = dialog.Result;
+        if (title.Length == 0)
+        {
+            TitleBox.Text = _currentTitle;
+            return;
+        }
+
+        if (title == _currentTitle) return;
+
+        if (!MeetingActions.Rename(this, _result.FolderPath, title))
+        {
+            TitleBox.Text = _currentTitle;
+            return;
+        }
+
+        _currentTitle = title;
         MeetingChanged?.Invoke();
     }
+
+    private void OnTitleKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            // Снимаем фокус — сохранение произойдёт в обработчике его потери.
+            Keyboard.ClearFocus();
+            FilesList.Focus();
+            e.Handled = true;
+        }
+        else if (e.Key == System.Windows.Input.Key.Escape)
+        {
+            TitleBox.Text = _currentTitle;
+            e.Handled = true;
+        }
+    }
+
+    private string _currentTitle = string.Empty;
 
     private void OnDeleteClick(object sender, RoutedEventArgs e)
     {
