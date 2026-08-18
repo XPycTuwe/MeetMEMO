@@ -46,10 +46,13 @@ public static class TranscriptRenderer
                 var stamp = FormatTimecode(seg.StartMs);
 
                 // «Собеседник N» — голос, различённый диаризацией; без неё остаётся канал.
+                // Если голос узнан по памяти, в поле speaker лежит имя человека —
+                // его и печатаем. «Собеседник N» остаётся для незнакомых.
                 var who = seg switch
                 {
                     { Source: AudioChannel.Microphone } => "Микрофон",
                     { Speaker: { } spk } when TryParseSpeaker(spk, out var n) => $"Собеседник {n}",
+                    { Speaker: { Length: > 0 } name } => name,
                     { Source: AudioChannel.Application } => "Приложение",
                     { Source: AudioChannel.System } => "Система",
                     _ => seg.Source.ToString()

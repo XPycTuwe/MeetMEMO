@@ -67,16 +67,33 @@ public sealed class SpeakerDiarizer
         var voices = await Task.Run(() => Diarize(audioPath, ct), ct).ConfigureAwait(false);
         if (voices.Count == 0) return 0;
 
+        // Кластеризация всё равно дробит людей: один и тот же человек попадает
+        // в несколько «голосов». Сливаем те, что звучат одинаково, и выбрасываем обрывки.
+        voices = await Task.Run(() => MergeSimilarVoices(audioPath, voices, ct), ct)
+            .ConfigureAwait(false);
+
         var speakers = voices.Select(v => v.Speaker).Distinct().Count();
 
         // Один голос размечать бессмысленно: пометка «spk1» на каждой реплике не добавляет
         // ничего к тому, что уже сказано каналом источника.
         if (speakers < 2) return speakers;
 
+        // Кого из различённых голосов мы уже знаем по имени.
+        var names = await Task.Run(() => RecognizeKnownVoices(audioPath, voices, ct), ct)
+            .ConfigureAwait(false);
+
         var annotated = segments
-            .Select(s => s.Source is AudioChannel.Application or AudioChannel.System
-                ? s with { Speaker = AssignSpeaker(s, voices) }
-                : s)
+            .Select(s =>
+            {
+                if (s.Source is not (AudioChannel.Application or AudioChannel.System)) return s;
+
+                var label = AssignSpeaker(s, voices);
+                if (label is null) return s with { Speaker = null };
+
+                // Имя вместо «spk2», если этот голос знаком: приложение узнало человека,
+                // значит и стенограмма должна называть его по имени.
+                return s with { Speaker = names.GetValueOrDefault(label, label) };
+            })
             .ToList();
 
         // Переписываем атомарно: упавшая на середине запись не должна съесть стенограмму.
@@ -125,6 +142,182 @@ public sealed class SpeakerDiarizer
         return $"spk{best.Key + 1}";
     }
 
+    /// <summary>
+    /// Насколько похожими должны звучать два кластера, чтобы счесть их одним человеком.
+    /// Порог мягче, чем при узнавании по памяти: там нужно не спутать людей между собой,
+    /// здесь — собрать одного человека из кусков, на которые его разрезала кластеризация.
+    /// </summary>
+    private const float SameVoiceSimilarity = 0.62f;
+
+    /// <summary>Голос, набравший меньше этого, — обрывок, а не участник встречи.</summary>
+    private static readonly TimeSpan MinVoicePresence = TimeSpan.FromSeconds(4);
+
+    /// <summary>
+    /// Сливает голоса, звучащие одинаково, и отбрасывает мимолётные.
+    ///
+    /// Кластеризация настроена осторожно и охотнее заводит новый голос, чем ошибается
+    /// слиянием. На часовой встрече это давало десяток «собеседников» вместо нескольких
+    /// человек. Здесь считаем отпечаток каждого кластера и объединяем похожие — то же
+    /// сравнение тембров, только между собой, а не с памятью.
+    /// </summary>
+    private IReadOnlyList<VoiceSegment> MergeSimilarVoices(
+        string audioPath, IReadOnlyList<VoiceSegment> voices, CancellationToken ct)
+    {
+        try
+        {
+            using var embedder = new VoiceEmbedder(_modelsRoot, _log);
+            if (!embedder.Ready) return voices;
+
+            var samples = ReadMonoResampled(audioPath, 16000);
+            var prints = BuildVoicePrints(embedder, samples, voices, ct);
+            if (prints.Count < 2) return voices;
+
+            // Каждому кластеру ищем самый ранний похожий и приписываем его номер.
+            var merged = new Dictionary<int, int>();
+            foreach (var (speaker, print) in prints.OrderBy(p => p.Key))
+            {
+                var twin = merged.Keys
+                    .Where(known => prints.ContainsKey(known))
+                    .FirstOrDefault(known =>
+                        VoicePrintStore.CosineSimilarity(prints[known], print) >= SameVoiceSimilarity);
+
+                merged[speaker] = merged.TryGetValue(twin, out var root) && twin != speaker
+                    ? root
+                    : speaker;
+            }
+
+            var byNewSpeaker = voices
+                .Select(v => v with { Speaker = merged.GetValueOrDefault(v.Speaker, v.Speaker) })
+                .ToList();
+
+            // Голоса, прозвучавшие мельком, метить незачем: «Собеседник 27» с одной
+            // репликой ничего не объясняет, а список участников засоряет.
+            var presence = byNewSpeaker
+                .GroupBy(v => v.Speaker)
+                .ToDictionary(g => g.Key, g => g.Sum(v => v.EndMs - v.StartMs));
+
+            var survivors = byNewSpeaker
+                .Where(v => presence[v.Speaker] >= MinVoicePresence.TotalMilliseconds)
+                .ToList();
+
+            // Перенумеровываем по порядку появления: после слияния уцелевшие номера
+            // разрежены, и на встрече из пяти человек получался «Собеседник 17».
+            var renumbered = survivors
+                .OrderBy(v => v.StartMs)
+                .Select(v => v.Speaker)
+                .Distinct()
+                .Select((speaker, index) => (speaker, index))
+                .ToDictionary(p => p.speaker, p => p.index);
+
+            var result = survivors
+                .Select(v => v with { Speaker = renumbered[v.Speaker] })
+                .ToList();
+
+            _log.LogInformation(
+                "Голоса после слияния: {After} из {Before}",
+                result.Select(v => v.Speaker).Distinct().Count(),
+                voices.Select(v => v.Speaker).Distinct().Count());
+
+            return result.Count > 0 ? result : voices;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Слить похожие голоса не удалось");
+            return voices;
+        }
+    }
+
+    /// <summary>Отпечаток каждого голоса — по самому длинному его куску речи.</summary>
+    private static Dictionary<int, float[]> BuildVoicePrints(
+        VoiceEmbedder embedder, float[] samples,
+        IReadOnlyList<VoiceSegment> voices, CancellationToken ct)
+    {
+        var prints = new Dictionary<int, float[]>();
+
+        foreach (var group in voices.GroupBy(v => v.Speaker))
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var longest = group.MaxBy(v => v.EndMs - v.StartMs);
+            if (longest is null) continue;
+
+            var start = (int)(longest.StartMs * 16);
+            var length = (int)((longest.EndMs - longest.StartMs) * 16);
+
+            if (start < 0 || start >= samples.Length) continue;
+            length = Math.Min(length, samples.Length - start);
+            if (length < 16000) continue;
+
+            var piece = new float[length];
+            Array.Copy(samples, start, piece, 0, length);
+
+            var embedding = embedder.Compute(piece);
+            if (embedding is not null) prints[group.Key] = embedding;
+        }
+
+        return prints;
+    }
+
+    /// <summary>
+    /// Сопоставляет различённые голоса с памятью: «spk2» → «Елена Петрова».
+    ///
+    /// Берём самый длинный кусок речи каждого голоса — на нём тембр слышен лучше всего,
+    /// а короткие реплики вроде «да, согласен» узнаются плохо. Возвращает только тех,
+    /// кого удалось опознать: остальные останутся «Собеседником N», и это честно.
+    /// </summary>
+    private Dictionary<string, string> RecognizeKnownVoices(
+        string audioPath, IReadOnlyList<VoiceSegment> voices, CancellationToken ct)
+    {
+        var names = new Dictionary<string, string>();
+
+        try
+        {
+            var store = new VoicePrintStore();
+            if (store.Count == 0) return names;
+
+            using var embedder = new VoiceEmbedder(_modelsRoot, _log);
+            if (!embedder.Ready) return names;
+
+            var samples = ReadMonoResampled(audioPath, 16000);
+
+            foreach (var group in voices.GroupBy(v => v.Speaker))
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var longest = group.MaxBy(v => v.EndMs - v.StartMs);
+                if (longest is null) continue;
+
+                var start = (int)(longest.StartMs * 16);          // мс → отсчёты на 16 кГц
+                var length = (int)((longest.EndMs - longest.StartMs) * 16);
+
+                if (start < 0 || start >= samples.Length) continue;
+                length = Math.Min(length, samples.Length - start);
+                if (length < 16000) continue;                      // короче секунды не берём
+
+                var piece = new float[length];
+                Array.Copy(samples, start, piece, 0, length);
+
+                var embedding = embedder.Compute(piece);
+                if (embedding is null) continue;
+
+                var hit = store.Recognize(embedding);
+                if (hit is null) continue;
+
+                names[$"spk{group.Key + 1}"] = hit.Value.Print.Name;
+
+                _log.LogInformation("Голос spk{Index} опознан как {Name} (похожесть {Score:N2})",
+                    group.Key + 1, hit.Value.Print.Name, hit.Value.Similarity);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Не опознали — не беда: метки «Собеседник N» останутся как есть.
+            _log.LogWarning(ex, "Не удалось сверить голоса с памятью");
+        }
+
+        return names;
+    }
+
     private IReadOnlyList<VoiceSegment> Diarize(string audioPath, CancellationToken ct)
     {
         var manager = new ModelManager(_modelsRoot);
@@ -142,8 +335,11 @@ public sealed class SpeakerDiarizer
         config.Embedding.Provider = "cpu";
 
         // Число собеседников заранее неизвестно — кластеризация сама решает по порогу.
+        // На живой встрече 0.5 дробил одного человека на десятки «собеседников»:
+        // на записи из Teams получалось 29 голосов там, где людей было пятеро.
+        // Проверено на часовой записи: 0.5 → 29 голосов, 0.65 → 17, 0.8 → 13, 0.9 → 11.
         config.Clustering.NumClusters = -1;
-        config.Clustering.Threshold = 0.5f;
+        config.Clustering.Threshold = 0.8f;
 
         // Реплики короче полусекунды и паузы короче — дребезг, а не смена говорящего.
         config.MinDurationOn = 0.5f;
