@@ -27,7 +27,17 @@
 
         <TextBlock Text="Должность или роль — необязательно"
                    FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085" />
-        <TextBox x:Name="RoleBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13" Margin="0,3,0,4" />
+        <TextBox x:Name="RoleBox" Padding="6,4" FontFamily="Segoe UI" FontSize="13" Margin="0,3,0,8" />
+
+        <!-- Фото попадёт в карточку говорящего справа сверху. Дело добровольное:
+             без снимка там рисуются инициалы. -->
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+            <Button x:Name="PhotoButton" Content="Выбрать фото" Padding="12,5"
+                    FontFamily="Segoe UI" FontSize="12" Click="OnPhotoClick" />
+            <TextBlock x:Name="PhotoName" Text="без фото" VerticalAlignment="Center"
+                       Margin="10,0,0,0" FontFamily="Segoe UI" FontSize="11"
+                       Foreground="#FF98A2B3" TextTrimming="CharacterEllipsis" MaxWidth="240" />
+        </StackPanel>
 
         <TextBlock Text="Попадёт в мемо: «Иванов — руководитель проекта поручил…»"
                    FontFamily="Segoe UI" FontSize="11" Foreground="#FF98A2B3"

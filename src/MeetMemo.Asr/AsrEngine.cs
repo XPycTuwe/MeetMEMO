@@ -54,6 +54,12 @@ public sealed class AsrEngine : ISessionParticipant, IDisposable
     /// <summary>Живой текст для панели — подписывается UI.</summary>
     public event Action<RecognizedSegment>? SegmentRecognized;
 
+    /// <summary>
+    /// Кто-то заговорил, звука уже достаточно для узнавания голоса. Приходит примерно
+    /// через секунду после первого слова, а не после того, как человек договорит.
+    /// </summary>
+    public event Action<AudioChannel, float[]>? SpeechStarted;
+
     public Task StartAsync(SessionContext context, CancellationToken ct)
     {
         _context = context;
@@ -64,6 +70,7 @@ public sealed class AsrEngine : ISessionParticipant, IDisposable
         {
             _transcriber = new LiveTranscriber(_model, _modelsRoot, _log);
             _transcriber.SegmentReady += OnSegmentReady;
+            _transcriber.SpeechStarted += (channel, head) => SpeechStarted?.Invoke(channel, head);
             _transcriber.Failed += OnTranscriberFailed;
             _transcriber.Initialize();
 

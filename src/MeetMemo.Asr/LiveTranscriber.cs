@@ -159,13 +159,20 @@ public sealed class LiveTranscriber : IDisposable
 
         try
         {
+            float[]? head = null;
+
             lock (pipeline.VadGate)
             {
                 if (pipeline.StreamStartOffsetMs < 0) pipeline.StreamStartOffsetMs = offsetMs;
 
                 pipeline.Vad.AcceptWaveform(samples16k);
+                head = CollectSpeechHead(pipeline, samples16k);
                 DrainVad(pipeline);
             }
+
+            // Событие вне блокировки: подписчик считает отпечаток голоса, и держать
+            // ради этого захваченный VAD нельзя — встанет приём звука.
+            if (head is not null) SpeechStarted?.Invoke(pipeline.Channel, head);
         }
         catch (Exception ex)
         {
@@ -173,6 +180,42 @@ public sealed class LiveTranscriber : IDisposable
             Failed?.Invoke(ex);
         }
     }
+
+    /// <summary>
+    /// Началась речь — набралось столько звука, чтобы узнать голос. Секунды достаточно:
+    /// на меньшем куске тембр не проявляется, а ждать дольше значит показывать имя
+    /// с опозданием.
+    /// </summary>
+    private const int SpeechHeadSamples = SampleRate;
+
+    /// <summary>
+    /// Копит начало фразы, пока человек говорит, и один раз отдаёт его наружу.
+    /// Возвращает null, пока копить нечего или отпечаток по этой фразе уже отдан.
+    /// </summary>
+    private static float[]? CollectSpeechHead(ChannelPipeline pipeline, float[] samples)
+    {
+        if (!pipeline.Vad.IsSpeechDetected())
+        {
+            // Человек замолчал — следующая фраза начнётся с чистого листа.
+            pipeline.SpeechHead.Clear();
+            pipeline.HeadDelivered = false;
+            return null;
+        }
+
+        if (pipeline.HeadDelivered) return null;
+
+        pipeline.SpeechHead.AddRange(samples);
+        if (pipeline.SpeechHead.Count < SpeechHeadSamples) return null;
+
+        pipeline.HeadDelivered = true;
+        return pipeline.SpeechHead.ToArray();
+    }
+
+    /// <summary>
+    /// Речь началась и её уже достаточно, чтобы узнать говорящего. Приходит примерно
+    /// через секунду после первого слова — задолго до того, как фраза будет распознана.
+    /// </summary>
+    public event Action<AudioChannel, float[]>? SpeechStarted;
 
     private void DrainVad(ChannelPipeline pipeline)
     {
@@ -313,5 +356,15 @@ public sealed class LiveTranscriber : IDisposable
         public VoiceActivityDetector Vad { get; }
         public object VadGate { get; } = new();
         public long StreamStartOffsetMs { get; set; } = -1;
+
+        /// <summary>
+        /// Начало текущей фразы, копится пока человек говорит. Нужно, чтобы узнать голос
+        /// сразу, не дожидаясь, когда он договорит: VAD отдаёт фразу только после паузы,
+        /// и на длинной реплике имя появлялось бы с опозданием в несколько секунд.
+        /// </summary>
+        public List<float> SpeechHead { get; } = new();
+
+        /// <summary>Отпечаток этой фразы уже отдан — второй раз по ней не считаем.</summary>
+        public bool HeadDelivered { get; set; }
     }
 }

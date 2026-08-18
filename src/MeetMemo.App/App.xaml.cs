@@ -576,27 +576,64 @@ public partial class App : Application
         _controller.UserFacingError += message =>
             Dispatcher.BeginInvoke(() => _tray?.ShowBalloonTip("MeetMemo", message, BalloonIcon.Error));
 
+        // Голос узнаётся, как только человек заговорил, — не дожидаясь, пока он договорит
+        // и фраза будет распознана. Имя успевает появиться раньше текста.
+        _asr.SpeechStarted += (channel, head) =>
+        {
+            if (channel == AudioChannel.Microphone) return;
+            if (_embedder is null || !_embedder.Ready || _voices is null) return;
+
+            try
+            {
+                var embedding = _embedder.Compute(head);
+                if (embedding is null) return;
+
+                var hit = _voices.Recognize(embedding);
+                if (hit is null) return;
+
+                Dispatcher.BeginInvoke(() => ShowSpeakerCard(hit.Value.Print));
+            }
+            catch (Exception ex)
+            {
+                LogError("voice-recognize-live", ex);
+            }
+        };
+
         _asr.SegmentRecognized += segment =>
         {
-            // Отпечаток берём здесь же, в фоновом потоке распознавания: на фразу уходит
-            // 25–90 мс, и в поток интерфейса такую работу тащить незачем.
+            // Отпечаток считаем здесь же, в фоновом потоке распознавания: тащить эту
+            // работу в поток интерфейса незачем.
             var recognized = RecognizeVoice(segment);
 
             Dispatcher.BeginInvoke(() =>
             {
-                _subtitles?.ShowLiveText(segment.Text);
+                var line = new SpokenLine
+                {
+                    Text = segment.Text,
+                    Channel = segment.Channel,
+                    Embedding = segment.Channel == AudioChannel.Microphone ? null : _lastEmbedding,
+                    Audio = segment.Samples
+                };
 
                 if (segment.Channel == AudioChannel.Microphone)
                 {
-                    // Свой микрофон подтверждать не нужно — канал и так ваш.
-                    _subtitles?.ShowSpeaker("Вы", null, 1f);
-                    return;
+                    // Свой микрофон называть не нужно — канал и так ваш.
+                    line.Who = "Вы";
+                    line.Known = true;
+                }
+                else if (recognized is { } hit)
+                {
+                    line.Who = hit.Print.Name;
+                    line.PrintId = hit.Print.Id;
+                    line.Known = true;
+                    ShowSpeakerCard(hit.Print);
+                }
+                else
+                {
+                    line.Who = "Кто это?";
                 }
 
-                if (recognized is { } hit)
-                    _subtitles?.ShowSpeaker(hit.Print.Display, hit.Print.Id, hit.Similarity);
-                else if (_lastEmbedding is not null)
-                    _subtitles?.ShowSpeaker("Голос незнаком", null, 0f);
+                _subtitles?.AddLine(line);
             });
         };
 
@@ -704,23 +741,43 @@ public partial class App : Application
         }
     }
 
-    /// <summary>Подтверждение догадки: голос запоминается крепче, узнавание становится увереннее.</summary>
-    private void OnSpeakerConfirmed(string printId)
+    /// <summary>Карточка говорящего справа сверху.</summary>
+    private SpeakerCardOverlay? _speakerCard;
+
+    private void ShowSpeakerCard(VoicePrint print)
     {
-        if (_voices is null || _lastEmbedding is null) return;
-
-        var print = _voices.All.FirstOrDefault(p => p.Id == printId);
-        if (print is null) return;
-
-        _voices.Remember(print.Name, print.Role, _lastEmbedding, _lastSamples);
+        try
+        {
+            _speakerCard ??= new SpeakerCardOverlay();
+            _speakerCard.ShowSpeaker(print.Name, print.Role, print.PhotoFile);
+        }
+        catch (Exception ex)
+        {
+            LogError("speaker-card", ex);
+        }
     }
 
-    /// <summary>Догадка неверна или голос незнаком — спрашиваем, кто это.</summary>
-    private void OnSpeakerRejected()
+    private void CloseSpeakerCard()
     {
-        if (_voices is null || _lastEmbedding is null) return;
+        try { _speakerCard?.Close(); }
+        catch (Exception) { }
+        finally { _speakerCard = null; }
+    }
 
-        var window = new VoiceNameWindow(_voices, _lastEmbedding, _lastSamples);
+    /// <summary>
+    /// Нажали «Назвать» или «Не он» у конкретной реплики. Работаем с её собственным
+    /// отпечатком, а не с «последним услышанным»: пока человек думает, кто это,
+    /// говорить успевает уже следующий.
+    /// </summary>
+    private void OnLineAction(SpokenLine line)
+    {
+        if (_voices is null || line.Embedding is null) return;
+
+        var suggested = line.PrintId is { } id
+            ? _voices.All.FirstOrDefault(p => p.Id == id)?.Name
+            : null;
+
+        var window = new VoiceNameWindow(_voices, line.Embedding, line.Audio, suggested);
         window.Show();
     }
 
@@ -792,8 +849,7 @@ public partial class App : Application
             if (_subtitles is null)
             {
                 _subtitles = new SubtitleOverlay();
-                _subtitles.SpeakerConfirmed += OnSpeakerConfirmed;
-                _subtitles.SpeakerRejected += OnSpeakerRejected;
+                _subtitles.LineAction += OnLineAction;
             }
 
             _subtitles.Reset();
@@ -807,6 +863,8 @@ public partial class App : Application
 
     private void CloseSubtitles()
     {
+        CloseSpeakerCard();
+
         if (_subtitles is null) return;
 
         try

@@ -31,6 +31,10 @@ public sealed record VoicePrint
     [JsonPropertyName("sample_file")]
     public string? SampleFile { get; init; }
 
+    /// <summary>Фото человека для карточки говорящего. Выбирается вручную, дело добровольное.</summary>
+    [JsonPropertyName("photo_file")]
+    public string? PhotoFile { get; init; }
+
     [JsonPropertyName("created_utc")]
     public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.UtcNow;
 
@@ -39,6 +43,18 @@ public sealed record VoicePrint
     public int Confirmations { get; init; } = 1;
 
     public string Display => string.IsNullOrWhiteSpace(Role) ? Name : $"{Name} — {Role}";
+
+    /// <summary>Буквы для кружка в карточке, когда фото нет: «Елена Петрова» даёт «ЕП».</summary>
+    public string Initials => MakeInitials(Name);
+
+    public static string MakeInitials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return "?";
+
+        var first = char.ToUpperInvariant(parts[0][0]);
+        return parts.Length == 1 ? first.ToString() : $"{first}{char.ToUpperInvariant(parts[1][0])}";
+    }
 }
 
 /// <summary>
@@ -211,15 +227,22 @@ public sealed class VoicePrintStore
         }
     }
 
-    /// <summary>Правка имени и должности у уже запомненного голоса.</summary>
-    public bool Rename(string id, string name, string? role)
+    /// <summary>Правка имени, должности и фото у уже запомненного голоса.</summary>
+    public bool Rename(string id, string name, string? role, string? photoFile = null)
     {
         lock (_gate)
         {
             var index = _prints.FindIndex(p => p.Id == id);
             if (index < 0) return false;
 
-            _prints[index] = _prints[index] with { Name = name, Role = role };
+            _prints[index] = _prints[index] with
+            {
+                Name = name,
+                Role = role,
+
+                // null означает «фото не трогаем»: правка имени не должна стирать снимок.
+                PhotoFile = photoFile ?? _prints[index].PhotoFile
+            };
         }
 
         Save();

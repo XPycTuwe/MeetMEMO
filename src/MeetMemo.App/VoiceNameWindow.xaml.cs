@@ -70,8 +70,28 @@ public partial class VoiceNameWindow : Window
 
         // Вместе с отпечатком кладём и саму фразу: позже её можно будет переслушать
         // и проверить, того ли человека мы помним.
-        _store.Remember(name, role.Length > 0 ? role : null, _embedding, _audio);
+        var print = _store.Remember(name, role.Length > 0 ? role : null, _embedding, _audio);
+
+        // Фото сохраняется отдельной правкой: Remember отвечает за голос, а не за карточку.
+        if (_photoPath is not null) _store.Rename(print.Id, print.Name, print.Role, _photoPath);
+
         Close();
+    }
+
+    private string? _photoPath;
+
+    private void OnPhotoClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Фото человека",
+            Filter = "Изображения|*.jpg;*.jpeg;*.png;*.bmp|Все файлы|*.*"
+        };
+
+        if (dialog.ShowDialog(this) != true) return;
+
+        _photoPath = dialog.FileName;
+        PhotoName.Text = System.IO.Path.GetFileName(_photoPath);
     }
 
     private void OnPlayClick(object sender, RoutedEventArgs e)
