@@ -17,43 +17,35 @@ namespace MeetMemo.App;
 public static class MeetingActions
 {
     /// <summary>
-    /// Переименовывает встречу: и папку, и название внутри session.json. Одной папки мало —
-    /// в мемо попадает именно название из манифеста, и оно бы осталось прежним.
-    /// Возвращает новый путь либо null, если переименовать не удалось.
+    /// Переименовывает встречу: меняется только название внутри session.json, папка
+    /// остаётся на месте.
+    ///
+    /// Двигать папку заманчиво, но опасно: она может быть открыта в проводнике, занята
+    /// антивирусом или как раз синхронизироваться облаком — и переименование упадёт
+    /// на ровном месте. Плюс путь помнят собранные архивы и восстановление прерванных
+    /// сессий. Название и так живёт в манифесте: в мемо и в имени архива идёт оно.
+    ///
+    /// Возвращает true, если название изменено.
     /// </summary>
-    public static string? Rename(Window owner, string folderPath, string newTitle)
+    public static bool Rename(Window? owner, string folderPath, string newTitle)
     {
         var title = newTitle.Trim();
-        if (title.Length == 0) return null;
+        if (title.Length == 0) return false;
 
         try
         {
             UpdateManifestTitle(folderPath, title);
-
-            var parent = Path.GetDirectoryName(folderPath)!;
-            var target = Path.Combine(parent, Sanitize(title));
-
-            // Такое же имя — переименовывать нечего, но название в манифесте уже обновлено.
-            if (string.Equals(target, folderPath, StringComparison.OrdinalIgnoreCase))
-                return folderPath;
-
-            // Занятое имя не перетираем: там чужая встреча.
-            if (Directory.Exists(target))
-            {
-                MessageBox.Show(owner,
-                    $"Папка «{Path.GetFileName(target)}» уже есть. Выберите другое название.",
-                    "MeetMemo", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return null;
-            }
-
-            Directory.Move(folderPath, target);
-            return target;
+            return true;
         }
         catch (Exception ex)
         {
-            MessageBox.Show(owner, $"Не удалось переименовать: {ex.Message}",
-                "MeetMemo", MessageBoxButton.OK, MessageBoxImage.Error);
-            return null;
+            if (owner is not null)
+            {
+                MessageBox.Show(owner, $"Не удалось переименовать: {ex.Message}",
+                    "MeetMemo", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+
+            return false;
         }
     }
 
@@ -157,19 +149,6 @@ public static class MeetingActions
             node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    /// <summary>Убирает из названия то, что Windows не пустит в имя папки.</summary>
-    private static string Sanitize(string title)
-    {
-        var clean = new string(title
-            .Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)
-            .ToArray())
-            .Trim();
-
-        // Имя не должно кончаться точкой или пробелом — проводник такие папки не открывает.
-        clean = clean.TrimEnd('.', ' ');
-
-        return clean.Length > 0 ? clean : "Встреча";
-    }
 
     private static long DirectorySize(string path)
     {

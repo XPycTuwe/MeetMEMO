@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Встреча записана"
         Icon="Assets/app.ico"
-        Height="420" Width="620"
+        Height="420" Width="620" MinWidth="420" MinHeight="320"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         Background="#FFF7F8FA">
@@ -60,33 +60,23 @@
                          Foreground="#FF2E74B5" Background="#FFE4E7EC" BorderThickness="0" />
         </StackPanel>
 
-        <Grid Grid.Row="4" Margin="0,16,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <!-- Переименование и удаление слева, подальше от кнопки архива:
-                 «удалить» рядом с тем, что нажимают не глядя, — плохая идея. -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal">
-                <Button Content="Переименовать" Padding="14,6" Margin="0,0,8,0"
-                        FontFamily="Segoe UI" FontSize="13" Click="OnRenameClick" />
-                <Button Content="Удалить" Padding="14,6"
-                        FontFamily="Segoe UI" FontSize="13" Foreground="#FFB42318"
-                        Click="OnDeleteClick" />
-            </StackPanel>
-
-            <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button Content="Открыть папку" Padding="14,6" Margin="0,0,8,0"
-                        FontFamily="Segoe UI" FontSize="13" Click="OnOpenFolderClick" />
-                <Button x:Name="ZipButton" Content="Собрать ZIP" Padding="16,6"
-                        FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
-                        Click="OnCreateZipClick" />
-                <Button Content="Закрыть" Padding="14,6" Margin="8,0,0,0"
-                        FontFamily="Segoe UI" FontSize="13" IsCancel="True"
-                        Click="OnCloseClick" />
-            </StackPanel>
-        </Grid>
+        <!-- WrapPanel, а не колонки: в узком окне кнопки переносятся на вторую строку,
+             а не уезжают за край. Правка и удаление идут первыми, подальше от «Собрать ZIP»:
+             «удалить» рядом с тем, что нажимают не глядя, — плохая идея. -->
+        <WrapPanel Grid.Row="4" Margin="0,16,0,0" HorizontalAlignment="Right">
+            <Button Content="Переименовать" Padding="14,6" Margin="0,4,8,0"
+                    FontFamily="Segoe UI" FontSize="13" Click="OnRenameClick" />
+            <Button Content="Удалить" Padding="14,6" Margin="0,4,20,0"
+                    FontFamily="Segoe UI" FontSize="13" Foreground="#FFB42318"
+                    Click="OnDeleteClick" />
+            <Button Content="Открыть папку" Padding="14,6" Margin="0,4,8,0"
+                    FontFamily="Segoe UI" FontSize="13" Click="OnOpenFolderClick" />
+            <Button x:Name="ZipButton" Content="Собрать ZIP" Padding="16,6" Margin="0,4,8,0"
+                    FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                    Click="OnCreateZipClick" />
+            <Button Content="Закрыть" Padding="14,6" Margin="0,4,0,0"
+                    FontFamily="Segoe UI" FontSize="13" IsCancel="True"
+                    Click="OnCloseClick" />
+        </WrapPanel>
     </Grid>
 </Window>

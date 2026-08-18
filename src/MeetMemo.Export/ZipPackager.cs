@@ -22,8 +22,47 @@ public sealed class ZipPackager
     public ZipPackager(ILogger? log = null) => _log = log ?? NullLogger.Instance;
 
     /// <summary>Имя архива по умолчанию совпадает с именем папки встречи.</summary>
-    public static string SuggestArchiveName(string meetingFolderPath) =>
-        Path.GetFileName(meetingFolderPath.TrimEnd(Path.DirectorySeparatorChar)) + ".zip";
+    /// <summary>
+    /// Имя архива. Берём название встречи из манифеста, а не имя папки: название можно
+    /// поменять, а папку мы намеренно не двигаем — она может быть занята проводником
+    /// или облаком. Если манифеста нет, остаётся имя папки.
+    /// </summary>
+    public static string SuggestArchiveName(string meetingFolderPath)
+    {
+        var folderName = Path.GetFileName(meetingFolderPath.TrimEnd(Path.DirectorySeparatorChar));
+
+        try
+        {
+            var manifestPath = Path.Combine(meetingFolderPath, "session.json");
+            if (!File.Exists(manifestPath)) return folderName + ".zip";
+
+            var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(manifestPath));
+            var title = node?["title"]?.GetValue<string>();
+
+            return string.IsNullOrWhiteSpace(title)
+                ? folderName + ".zip"
+                : SanitizeFileName(title) + ".zip";
+        }
+        catch (Exception)
+        {
+            return folderName + ".zip";
+        }
+    }
+
+    /// <summary>
+    /// Убирает из названия то, что Windows не пустит в имя файла. Хвостовые точки
+    /// и пробелы срезаем отдельно: файл с таким именем потом не открыть.
+    /// </summary>
+    private static string SanitizeFileName(string title)
+    {
+        var clean = new string(title
+            .Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)
+            .ToArray())
+            .Trim()
+            .TrimEnd('.', ' ');
+
+        return clean.Length > 0 ? clean : "Встреча";
+    }
 
     public async Task<FileInfo> CreateAsync(
         ExportPlan plan,

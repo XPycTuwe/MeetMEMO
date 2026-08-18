@@ -155,29 +155,28 @@ public partial class CompletionWindow : Window
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
     /// <summary>
-    /// Путь меняется при переименовании, поэтому храним его отдельно от результата сессии:
-    /// он неизменяемый, а папка после правки названия уже другая.
+    /// Встречу переименовали или удалили. Список встреч в параметрах живёт своей жизнью
+    /// и об этом не узнает: без события там осталась бы строка удалённой папки.
     /// </summary>
-    private string FolderPath => _folderPath ?? _result.FolderPath;
-
-    private string? _folderPath;
+    public event Action? MeetingChanged;
 
     private void OnRenameClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new RenameWindow(MeetingActions.ReadTitle(FolderPath)) { Owner = this };
+        var dialog = new RenameWindow(MeetingActions.ReadTitle(_result.FolderPath)) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Result is null) return;
 
-        var moved = MeetingActions.Rename(this, FolderPath, dialog.Result);
-        if (moved is null) return;
+        if (!MeetingActions.Rename(this, _result.FolderPath, dialog.Result)) return;
 
-        _folderPath = moved;
-        PathText.Text = moved;
         HeaderText.Text = dialog.Result;
+        MeetingChanged?.Invoke();
     }
 
     private void OnDeleteClick(object sender, RoutedEventArgs e)
     {
-        if (MeetingActions.Delete(this, FolderPath)) Close();
+        if (!MeetingActions.Delete(this, _result.FolderPath)) return;
+
+        MeetingChanged?.Invoke();
+        Close();
     }
 
     private void OnOpenFolderClick(object sender, RoutedEventArgs e)

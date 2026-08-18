@@ -339,16 +339,6 @@ public partial class App : Application
             CaptureEngine.CollectWindowContext = _settings.CollectWindowContext;
         };
 
-        window.MeetingRequested += path =>
-        {
-            var card = CompletionWindow.ForFolder(path, _settings);
-            if (card is not null) card.Show();
-            else Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"")
-            {
-                UseShellExecute = true
-            });
-        };
-
         window.ModelsDownloadRequested += async () =>
             await DownloadModelsAsync(new ModelManager(_settings.ModelsRoot));
 

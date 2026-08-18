@@ -28,8 +28,6 @@ public partial class SettingsWindow : Window
     /// <summary>Настройки изменены и сохранены — приложение перечитывает их у себя.</summary>
     public event Action<AppSettings>? SettingsSaved;
 
-    /// <summary>Пользователь попросил открыть карточку встречи.</summary>
-    public event Action<string>? MeetingRequested;
 
     /// <summary>Пользователь попросил докачать модели.</summary>
     public event Action? ModelsDownloadRequested;
@@ -417,9 +415,28 @@ public partial class SettingsWindow : Window
         OpenFolderButton.IsEnabled = OpenCardButton.IsEnabled = has;
     }
 
+    /// <summary>
+    /// Карточку открываем сами, а не просим приложение: тогда можно подписаться на её
+    /// изменения и обновить список, если встречу оттуда переименовали или удалили.
+    /// </summary>
     private void OnOpenMeeting(object sender, RoutedEventArgs e)
     {
-        if (MeetingList.SelectedItem is MeetingRow row) MeetingRequested?.Invoke(row.Path);
+        if (MeetingList.SelectedItem is not MeetingRow row) return;
+
+        var card = CompletionWindow.ForFolder(row.Path, _settings);
+        if (card is null)
+        {
+            // Папка без манифеста — не встреча MeetMemo, показывать в карточке нечего.
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{row.Path}\"")
+            {
+                UseShellExecute = true
+            });
+            return;
+        }
+
+        card.Owner = this;
+        card.MeetingChanged += LoadMeetings;
+        card.Show();
     }
 
     /// <summary>
@@ -457,7 +474,7 @@ public partial class SettingsWindow : Window
         var dialog = new RenameWindow(MeetingActions.ReadTitle(row.Path)) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Result is null) return;
 
-        if (MeetingActions.Rename(this, row.Path, dialog.Result) is not null) LoadMeetings();
+        if (MeetingActions.Rename(this, row.Path, dialog.Result)) LoadMeetings();
     }
 
     private void OnDeleteMeeting(object sender, RoutedEventArgs e)
