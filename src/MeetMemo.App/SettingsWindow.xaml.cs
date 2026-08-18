@@ -341,11 +341,23 @@ public partial class SettingsWindow : Window
         };
 
         var rows = AsrModelCatalog.Required
-            .Select(m => new ModelRow(
-                m.DisplayName,
-                purposes.GetValueOrDefault(m.Id, m.Notes ?? string.Empty),
-                $"{m.ApproxSizeBytes / 1024 / 1024} МБ",
-                manager.IsInstalled(m) ? "установлена" : "не скачана"))
+            .Select(m =>
+            {
+                var installed = manager.IsInstalled(m);
+
+                // У установленной берём настоящий размер с диска, у остальных — ожидаемый.
+                // И форматируем общей мерой: Silero весит 640 КБ, а целые мегабайты
+                // показывали её нулевой.
+                var bytes = installed
+                    ? DirectorySize(new DirectoryInfo(manager.GetModelDirectory(m)))
+                    : m.ApproxSizeBytes;
+
+                return new ModelRow(
+                    m.DisplayName,
+                    purposes.GetValueOrDefault(m.Id, m.Notes ?? string.Empty),
+                    FormatSize(bytes),
+                    installed ? "установлена" : "не скачана");
+            })
             .ToList();
 
         ModelList.ItemsSource = rows;
