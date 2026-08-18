@@ -84,4 +84,74 @@ public sealed class DiarizationTests
         Assert.Contains("\"speaker\":\"spk2\"", json);
         Assert.Contains("\"source\":\"application\"", json);
     }
+
+    // ===== Короткие реплики: что поглощать, а что беречь =====
+
+    [Fact]
+    public void Пауза_посреди_речи_не_создаёт_нового_собеседника()
+    {
+        // Человек говорил, запнулся, продолжил — кластеризация завела на паузу
+        // отдельный голос, хотя говорил всё время один.
+        var voices = new List<VoiceSegment>
+        {
+            new(0, 20_000, Speaker: 0),
+            new(20_000, 21_500, Speaker: 7),
+            new(21_500, 40_000, Speaker: 0)
+        };
+
+        var result = SpeakerDiarizer.AbsorbShortPieces(voices);
+
+        Assert.Equal(1, result.Select(v => v.Speaker).Distinct().Count());
+        Assert.All(result, v => Assert.Equal(0, v.Speaker));
+    }
+
+    [Fact]
+    public void Короткое_да_на_вопрос_остаётся_отдельной_репликой()
+    {
+        // «Паша, возьмёшься сделать?» — «Да». Единственная реплика человека за встречу
+        // и самая важная: это согласие на поручение.
+        var voices = new List<VoiceSegment>
+        {
+            new(0, 8_000, Speaker: 0),          // вопрос задаёт первый
+            new(8_000, 9_000, Speaker: 3),      // Паша отвечает «да»
+            new(9_000, 30_000, Speaker: 1)      // дальше говорит уже третий
+        };
+
+        var result = SpeakerDiarizer.AbsorbShortPieces(voices);
+
+        // Соседи разные — реплику не присваиваем никому другому.
+        Assert.Contains(result, v => v.Speaker == 3 && v.EndMs - v.StartMs == 1_000);
+        Assert.Equal(3, result.Select(v => v.Speaker).Distinct().Count());
+    }
+
+    [Fact]
+    public void Длинная_реплика_между_чужими_не_поглощается()
+    {
+        var voices = new List<VoiceSegment>
+        {
+            new(0, 10_000, Speaker: 0),
+            new(10_000, 25_000, Speaker: 5),   // пятнадцать секунд — точно свой голос
+            new(25_000, 40_000, Speaker: 0)
+        };
+
+        var result = SpeakerDiarizer.AbsorbShortPieces(voices);
+
+        Assert.Contains(result, v => v.Speaker == 5);
+    }
+
+    [Fact]
+    public void Короткая_реплика_в_самом_конце_никуда_не_девается()
+    {
+        // У последнего сегмента нет соседа справа — поглощать не с чем.
+        var voices = new List<VoiceSegment>
+        {
+            new(0, 30_000, Speaker: 0),
+            new(30_000, 31_000, Speaker: 2)
+        };
+
+        var result = SpeakerDiarizer.AbsorbShortPieces(voices);
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, v => v.Speaker == 2);
+    }
 }

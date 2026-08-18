@@ -149,8 +149,16 @@ public sealed class SpeakerDiarizer
     /// </summary>
     private const float SameVoiceSimilarity = 0.62f;
 
-    /// <summary>Голос, набравший меньше этого, — обрывок, а не участник встречи.</summary>
-    private static readonly TimeSpan MinVoicePresence = TimeSpan.FromSeconds(4);
+    /// <summary>
+    /// Короткий кусок речи, зажатый между репликами одного и того же голоса, почти
+    /// наверняка принадлежит ему же: человек сделал паузу, а кластеризация успела
+    /// завести новый голос. Такие куски присоединяем к соседям.
+    ///
+    /// Отбрасывать короткие реплики нельзя: «Паша, возьмёшься?» — «Да» это согласие
+    /// на поручение, самая ценная секунда встречи, и она может быть единственной
+    /// репликой человека за весь разговор.
+    /// </summary>
+    private static readonly TimeSpan ShortPieceLimit = TimeSpan.FromSeconds(2.5);
 
     /// <summary>
     /// Сливает голоса, звучащие одинаково, и отбрасывает мимолётные.
@@ -190,15 +198,7 @@ public sealed class SpeakerDiarizer
                 .Select(v => v with { Speaker = merged.GetValueOrDefault(v.Speaker, v.Speaker) })
                 .ToList();
 
-            // Голоса, прозвучавшие мельком, метить незачем: «Собеседник 27» с одной
-            // репликой ничего не объясняет, а список участников засоряет.
-            var presence = byNewSpeaker
-                .GroupBy(v => v.Speaker)
-                .ToDictionary(g => g.Key, g => g.Sum(v => v.EndMs - v.StartMs));
-
-            var survivors = byNewSpeaker
-                .Where(v => presence[v.Speaker] >= MinVoicePresence.TotalMilliseconds)
-                .ToList();
+            var survivors = AbsorbShortPieces(byNewSpeaker);
 
             // Перенумеровываем по порядку появления: после слияния уцелевшие номера
             // разрежены, и на встрече из пяти человек получался «Собеседник 17».
@@ -225,6 +225,40 @@ public sealed class SpeakerDiarizer
             _log.LogWarning(ex, "Слить похожие голоса не удалось");
             return voices;
         }
+    }
+
+    /// <summary>
+    /// Присоединяет короткие куски к соседям, когда до и после говорил один и тот же
+    /// голос. Это чинит частый случай: человек говорит долго, посреди его речи пауза,
+    /// и кластеризация заводит на этот кусок отдельный «голос».
+    ///
+    /// Одиночные короткие реплики — «да», «согласен», «принял» — не трогаем: соседи
+    /// у них разные, и это действительно чей-то ответ, часто самый важный на встрече.
+    /// </summary>
+    public static List<VoiceSegment> AbsorbShortPieces(IReadOnlyList<VoiceSegment> voices)
+    {
+        var ordered = voices.OrderBy(v => v.StartMs).ToList();
+        var result = new List<VoiceSegment>(ordered.Count);
+
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var current = ordered[i];
+            var duration = current.EndMs - current.StartMs;
+
+            if (duration <= ShortPieceLimit.TotalMilliseconds
+                && i > 0 && i < ordered.Count - 1
+                && ordered[i - 1].Speaker == ordered[i + 1].Speaker
+                && ordered[i - 1].Speaker != current.Speaker)
+            {
+                // Окружён одним голосом с обеих сторон — значит это он и есть.
+                result.Add(current with { Speaker = ordered[i - 1].Speaker });
+                continue;
+            }
+
+            result.Add(current);
+        }
+
+        return result;
     }
 
     /// <summary>Отпечаток каждого голоса — по самому длинному его куску речи.</summary>
