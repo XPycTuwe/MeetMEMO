@@ -14,6 +14,16 @@ public sealed class AudioEngine : ISessionParticipant, IAudioSourceSwitchable, I
 {
     private static readonly TimeSpan SilenceWarningAfter = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// Через сколько молчания дорожки приложения считать, что мы слушаем не то.
+    ///
+    /// Изоляция по дереву процессов работает не везде: Teams из Microsoft Store играет
+    /// звук мимо своего дерева, и захват формально удаётся, а в дорожке тишина. Понять
+    /// это по одной паузе нельзя — на встрече бывает тихо, — но если за полминуты
+    /// не пришло ни одного звука, слушаем мы явно не тот процесс.
+    /// </summary>
+    private static readonly TimeSpan DeadChannelAfter = TimeSpan.FromSeconds(30);
+
     private readonly List<IAudioTap> _taps = new();
     private readonly ILogger<AudioEngine> _log;
     private readonly object _tapGate = new();
@@ -239,6 +249,20 @@ public sealed class AudioEngine : ISessionParticipant, IAudioSourceSwitchable, I
         {
             since = -1;
             reported = false;
+            if (channel != AudioChannel.Microphone) _appEverHadSound = true;
+            return;
+        }
+
+        // Дорожка приложения молчит с самого начала записи — переключаемся на общий
+        // системный звук, не дожидаясь конца встречи и пустой стенограммы.
+        if (channel != AudioChannel.Microphone
+            && !_appEverHadSound
+            && !_deadChannelHandled
+            && CurrentMode == AudioMode.ApplicationProcessTree
+            && offsetMs >= DeadChannelAfter.TotalMilliseconds)
+        {
+            _deadChannelHandled = true;
+            SwitchToSystemAudio("в звуке приложения за полминуты не было ни звука");
             return;
         }
 
@@ -253,6 +277,51 @@ public sealed class AudioEngine : ISessionParticipant, IAudioSourceSwitchable, I
                 ["seconds"] = ((offsetMs - since) / 1000).ToString()
             });
     }
+
+    /// <summary>Был ли в дорожке приложения хоть какой-то звук с начала записи.</summary>
+    private bool _appEverHadSound;
+
+    private bool _deadChannelHandled;
+
+    /// <summary>
+    /// Переводит запись на общий системный звук, не прерывая встречу. Плата за это —
+    /// потеря изоляции: в дорожку попадёт и музыка, и уведомления. Зато встреча
+    /// перестаёт записываться в тишину.
+    /// </summary>
+    private void SwitchToSystemAudio(string reason)
+    {
+        if (_context is null) return;
+
+        _log.LogWarning("Переключаюсь на общий системный звук: {Reason}", reason);
+
+        try
+        {
+            _processLoopback?.Dispose();
+            _processLoopback = null;
+            StartSystemLoopback(_context);
+
+            _context.Events.Emit(_context.Clock, EventTypes.AudioSourceChanged,
+                EventSeverity.Warning,
+                new Dictionary<string, string>
+                {
+                    ["from"] = AudioMode.ApplicationProcessTree.ToString(),
+                    ["to"] = AudioMode.System.ToString(),
+                    ["reason"] = reason
+                });
+
+            AudioSourceSwitched?.Invoke(reason);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Не удалось перейти на общий системный звук");
+        }
+    }
+
+    /// <summary>
+    /// Запись перешла на общий системный звук. Человек должен об этом узнать: изоляции
+    /// больше нет, и в дорожку теперь попадает всё, что звучит на компьютере.
+    /// </summary>
+    public event Action<string>? AudioSourceSwitched;
 
     private void OnCaptureFailed(AudioChannel channel, Exception ex)
     {

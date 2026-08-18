@@ -547,6 +547,16 @@ public partial class App : Application
         _audio = new AudioEngine();
         var degradation = new DegradationPolicy();
 
+        // Изоляция звука работает не со всяким приложением: Teams из Microsoft Store играет
+        // мимо своего дерева процессов. Движок сам уходит на общий звук, а человеку нужно
+        // сказать — иначе он узнает об этом только по составу дорожки.
+        _audio.AudioSourceSwitched += reason => Dispatcher.BeginInvoke(() =>
+            _tray?.ShowBalloonTip(
+                "MeetMemo — звук приложения не слышен",
+                "Перешёл на общий звук системы: " + reason
+                + ". В запись теперь попадает всё, что звучит на компьютере.",
+                BalloonIcon.Warning));
+
         _capture = new CaptureEngine(_store, degradation, new AutoScreenshotOptions
         {
             MinInterval = TimeSpan.FromSeconds(_settings.AutoScreenshotIntervalSeconds),
