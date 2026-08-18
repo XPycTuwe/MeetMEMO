@@ -32,7 +32,6 @@ public partial class App : Application
     private AudioEngine? _audio;
     private CaptureEngine? _capture;
     private AsrEngine? _asr;
-    private SourcePickerWindow? _picker;
 
     /// <summary>Кнопки MeetMemo в заголовках окон отмеченных приложений — по одной на окно.</summary>
     private readonly Dictionary<nint, TitleBarOverlay> _overlays = new();
@@ -299,59 +298,70 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Настройка записи: какие приложения ведём и как пишем звук. Саму запись отсюда
+    /// Окно параметров: приложения и запись, голоса, модели, встречи. Саму запись отсюда
     /// не запускаем — для этого есть кнопка в заголовке отмеченного окна.
     /// </summary>
-    private async void ConfigureRecording()
+    private void ConfigureRecording()
     {
-        // Без моделей живой стенограммы не будет — предупреждаем заранее, а не в момент записи.
-        var models = new ModelManager(_settings.ModelsRoot);
-        if (models.GetMissing().Count > 0)
+        if (_settingsWindow is not null)
         {
-            var answer = ShowMessageNow(
-                $"Модели распознавания не установлены (нужно ~{models.GetMissingBytes() / 1024 / 1024} МБ).\n\n"
-                + "Без них запись пойдёт, но живой стенограммы не будет.\n\nСкачать сейчас?",
-                "MeetMemo", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-
-            if (answer == MessageBoxResult.Cancel) return;
-            if (answer == MessageBoxResult.Yes)
-            {
-                await DownloadModelsAsync(models);
-            }
+            _settingsWindow.Activate();
+            return;
         }
 
-        if (_picker is not null) { _picker.Activate(); return; }
+        _voices ??= new VoicePrintStore();
 
-        _picker = new SourcePickerWindow(_settings);
-        _picker.TrackedAppsChanged += OnTrackedAppChanged;
-        var dialogResult = _picker.ShowDialog();
-        var preferences = _picker.Result;
-        _picker.TrackedAppsChanged -= OnTrackedAppChanged;
-        _picker = null;
-
-        if (dialogResult != true || preferences is null) return;
-
-        _settings = _settings with
+        SettingsWindow window;
+        try
         {
-            MicrophoneDeviceId = preferences.MicrophoneDeviceId,
-            AudioMode = preferences.AudioMode,
-            SaveAudioFiles = preferences.SaveAudioFiles,
-            AutoScreenshots = preferences.AutoScreenshotsEnabled,
-            ShowSubtitles = preferences.ShowSubtitles
-        };
-        await _settings.SaveAsync();
+            window = new SettingsWindow(_settings, _voices);
+        }
+        catch (Exception ex)
+        {
+            // Это единственный вход в настройки: молча проглотить ошибку нельзя,
+            // иначе значок в трее просто перестанет отзываться на щелчок.
+            LogError("settings-window", ex);
+            ShowMessage($"Не удалось открыть параметры: {ex.Message}\n\n"
+                + "Подробности записаны в app-errors.log.", "MeetMemo", MessageBoxImage.Error);
+            return;
+        }
 
-        // Подсказываем, где теперь начинается запись: кнопка «Сохранить» её не запускает,
-        // и без пояснения человек ждёт старта, которого не будет.
-        _tray?.ShowBalloonTip(
-            "MeetMemo",
-            _settings.TrackedApps.Count > 0
-                ? "Параметры сохранены. Запись начинается кнопкой «Записать» в заголовке "
-                  + "отмеченного окна."
-                : "Параметры сохранены. Отметьте приложение галочкой «Вести», чтобы в заголовке "
-                  + "его окон появилась кнопка записи.",
-            BalloonIcon.Info);
+        _settingsWindow = window;
+
+        window.TrackedAppsChanged += OnTrackedAppChanged;
+
+        window.SettingsSaved += async saved =>
+        {
+            _settings = saved;
+            await _settings.SaveAsync();
+
+            ScreenshotStore.ScreenshotColors = _settings.ScreenshotColors;
+            CaptureEngine.CollectWindowContext = _settings.CollectWindowContext;
+        };
+
+        window.MeetingRequested += path =>
+        {
+            var card = CompletionWindow.ForFolder(path, _settings);
+            if (card is not null) card.Show();
+            else Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"")
+            {
+                UseShellExecute = true
+            });
+        };
+
+        window.ModelsDownloadRequested += async () =>
+            await DownloadModelsAsync(new ModelManager(_settings.ModelsRoot));
+
+        window.Closed += (_, _) =>
+        {
+            window.TrackedAppsChanged -= OnTrackedAppChanged;
+            _settingsWindow = null;
+        };
+
+        window.Show();
     }
+
+    private SettingsWindow? _settingsWindow;
 
     /// <summary>
     /// Отмеченные приложения запускаются и закрываются в любой момент, а системного
@@ -1082,7 +1092,7 @@ public partial class App : Application
 
         var newMeeting = _tray.ContextMenu.Items
             .OfType<MenuItem>()
-            .FirstOrDefault(i => (i.Header as string) == "Приложения и параметры записи");
+            .FirstOrDefault(i => (i.Header as string) == "Параметры");
         if (newMeeting is not null) newMeeting.IsEnabled = !recording;
 
         var everything = _tray.ContextMenu.Items
@@ -1277,12 +1287,6 @@ public partial class App : Application
         });
     }
 
-    private void OnVoiceLibraryClick(object sender, RoutedEventArgs e) =>
-        DeferToUi(() =>
-        {
-            _voices ??= new VoicePrintStore();
-            new VoiceLibraryWindow(_voices).Show();
-        });
 
     private void OnCheckModelsClick(object sender, RoutedEventArgs e)
     {

@@ -8,9 +8,11 @@
     <Application.Resources>
         <ResourceDictionary>
             <ContextMenu x:Key="TrayMenu" x:Shared="false">
-                <MenuItem x:Name="NewMeetingItem" Header="Приложения и параметры записи"
+                <!-- Меню намеренно короткое: всё управление живёт в окне параметров,
+                     а здесь только то, к чему тянутся по нескольку раз в день. -->
+                <MenuItem x:Name="NewMeetingItem" Header="Параметры"
                           Click="OnNewMeetingClick" FontWeight="SemiBold" />
-                <MenuItem x:Name="RecordEverythingItem" Header="Записать весь звук системы"
+                <MenuItem x:Name="RecordEverythingItem" Header="Запись встречи"
                           Click="OnRecordEverythingClick" />
                 <!-- Управление записью из трея нужно, когда окна-цели нет: при записи
                      всей системы значок в заголовке негде показать -->
@@ -19,12 +21,7 @@
                 <MenuItem x:Name="DesktopShotItem" Header="Снимок экрана"
                           Click="OnDesktopShotClick" Visibility="Collapsed" />
                 <Separator />
-                <MenuItem x:Name="RecentItem" Header="Последние встречи" />
                 <MenuItem Header="Открыть папку встреч" Click="OnOpenMeetingsRootClick" />
-                <Separator />
-                <MenuItem Header="Знакомые голоса" Click="OnVoiceLibraryClick" />
-                <MenuItem Header="Проверить модели распознавания" Click="OnCheckModelsClick" />
-                <MenuItem Header="О программе" Click="OnAboutClick" />
                 <Separator />
                 <MenuItem Header="Выход" Click="OnExitClick" />
             </ContextMenu>
