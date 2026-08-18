@@ -45,7 +45,7 @@ public partial class CompletionWindow : Window
             .Select(i => $"{i.RelativePath}  ({ExportPlan.FormatSize(i.SizeBytes)})")
             .ToList();
 
-        ZipButton.Content = $"Собрать ZIP ({ExportPlan.FormatSize(plan.TotalBytes)})";
+        ZipLabel.Text = $"Собрать ZIP ({ExportPlan.FormatSize(plan.TotalBytes)})";
 
         if (result.Warnings.Count > 0)
         {
@@ -114,7 +114,7 @@ public partial class CompletionWindow : Window
     {
         ProcessingPanel.Visibility = Visibility.Visible;
         ProcessingText.Text = what;
-        ZipButton.Content = "Собрать ZIP сейчас";
+        ZipLabel.Text = "Собрать ZIP сейчас";
     }
 
     /// <summary>Обработка закончена: состав пакета пересчитываем — он изменился.</summary>
@@ -124,7 +124,7 @@ public partial class CompletionWindow : Window
         ProcessingBar.Value = 100;
         ProcessingText.Text = summary;
         ProcessingHint.Text = "Пакет готов полностью.";
-        ZipButton.Content = "Собрать ZIP";
+        ZipLabel.Text = "Собрать ZIP";
 
         RefreshFileList();
     }
@@ -147,12 +147,6 @@ public partial class CompletionWindow : Window
 
     private static string FormatDuration(TimeSpan ts) =>
         ts.Hours > 0 ? $"{ts.Hours} ч {ts.Minutes} мин" : $"{ts.Minutes} мин {ts.Seconds} с";
-
-    /// <summary>
-    /// Карточка показывается немодально, поэтому IsCancel сам окно не закрывает —
-    /// нужен явный обработчик, иначе работает только системный крестик.
-    /// </summary>
-    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
     /// <summary>
     /// Встречу переименовали или удалили. Список встреч в параметрах живёт своей жизнью
