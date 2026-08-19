@@ -1,3 +1,4 @@
+using System.IO;
 using System.Drawing;
 using System.Runtime.Versioning;
 using MeetMemo.Contracts;
@@ -82,7 +83,7 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
             var fragments = WindowTextReader.ReadVisibleText(_targetWindow);
             if (fragments.Count == 0) return;
 
-            var key = string.Join('', fragments);
+            var key = string.Join("|", fragments);
             if (key == _lastContextKey) return;
             _lastContextKey = key;
 
@@ -345,7 +346,55 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
             ("manual", entry.Manual ? "true" : "false"));
 
         ScreenshotSaved?.Invoke(entry);
+
+        // Снимок уже на диске — прочитаем с него текст, пока он свежий. Это второй
+        // источник контекста, и для приложений вроде TrueConf единственный рабочий.
+        _ = ReadScreenshotTextAsync(entry);
     }
+
+    private ScreenshotTextReader? _ocr;
+
+    /// <summary>
+    /// Читает текст с только что сделанного снимка и кладёт в context.jsonl.
+    ///
+    /// Дерево доступности отдаёт не всё: TrueConf на Qt показывает снаружи одни
+    /// «Свернуть» и «Закрыть», а бейдж говорящего и панель участников — только на экране.
+    /// Со снимка они читаются: «Тухватуллин Айрат Мансурович» в бейдже и семь имён
+    /// в панели, за треть секунды. Пишем только когда текст изменился, иначе набежит
+    /// сотня одинаковых списков.
+    /// </summary>
+    private async Task ReadScreenshotTextAsync(ScreenshotEntry entry)
+    {
+        if (_context is null || _context_writer is null || !CollectWindowContext) return;
+
+        try
+        {
+            _ocr ??= new ScreenshotTextReader();
+            if (!_ocr.Ready) return;
+
+            var path = Path.Combine(_context.FolderPath, entry.File.Replace('/', Path.DirectorySeparatorChar));
+            var lines = await _ocr.ReadLinesAsync(path).ConfigureAwait(false);
+            if (lines.Count == 0) return;
+
+            var key = "ocr:" + string.Join("|", lines);
+            if (key == _lastOcrKey) return;
+            _lastOcrKey = key;
+
+            await _context_writer.AppendAsync(new WindowContextEntry
+            {
+                OffsetMs = entry.OffsetMs,
+                WindowTitle = entry.WindowTitle,
+                Fragments = lines,
+                Source = "screenshot"
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "Не удалось прочитать текст со снимка");
+        }
+    }
+
+    private string _lastOcrKey = string.Empty;
 
     private void NotifyTargetProblem(string reason)
     {

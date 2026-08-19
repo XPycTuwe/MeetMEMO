@@ -59,6 +59,14 @@ public sealed record WindowContextEntry
     /// <summary>Текстовые фрагменты в порядке обхода окна: соседство в списке несёт смысл.</summary>
     [JsonPropertyName("fragments")]
     public required IReadOnlyList<string> Fragments { get; init; }
+
+    /// <summary>
+    /// Откуда взят текст: «accessibility» — из дерева доступности окна, «screenshot» —
+    /// прочитан со снимка. Второе полнее у приложений, которые снаружи почти ничего
+    /// не отдают, но может содержать ошибки распознавания.
+    /// </summary>
+    [JsonPropertyName("source")]
+    public string Source { get; init; } = "accessibility";
 }
 
 /// <summary>Тип снимка (ТЗ 9.1).</summary>

@@ -150,6 +150,13 @@ public sealed class SpeakerDiarizer
     private const float SameVoiceSimilarity = 0.62f;
 
     /// <summary>
+    /// Похожесть, при которой голосу в стенограмме присваивается имя из памяти. Строже
+    /// порога карточки (0,55): ошибку на экране человек поправит сразу, а в архиве она
+    /// останется навсегда и будет выглядеть достоверно.
+    /// </summary>
+    private const float TranscriptNamingThreshold = 0.68f;
+
+    /// <summary>
     /// Короткий кусок речи, зажатый между репликами одного и того же голоса, почти
     /// наверняка принадлежит ему же: человек сделал паузу, а кластеризация успела
     /// завести новый голос. Такие куски присоединяем к соседям.
@@ -181,17 +188,24 @@ public sealed class SpeakerDiarizer
             if (prints.Count < 2) return voices;
 
             // Каждому кластеру ищем самый ранний похожий и приписываем его номер.
+            //
+            // Осторожно с «не найдено»: FirstOrDefault на числах возвращает 0, а 0 — это
+            // номер первого голоса. Из-за этого все непохожие голоса приписывались первому,
+            // и целая встреча четверых оказалась подписана одним человеком. Ищем явно.
             var merged = new Dictionary<int, int>();
             foreach (var (speaker, print) in prints.OrderBy(p => p.Key))
             {
-                var twin = merged.Keys
-                    .Where(known => prints.ContainsKey(known))
-                    .FirstOrDefault(known =>
-                        VoicePrintStore.CosineSimilarity(prints[known], print) >= SameVoiceSimilarity);
+                int? twin = null;
+                foreach (var known in merged.Keys)
+                {
+                    if (!prints.ContainsKey(known)) continue;
+                    if (VoicePrintStore.CosineSimilarity(prints[known], print) < SameVoiceSimilarity) continue;
 
-                merged[speaker] = merged.TryGetValue(twin, out var root) && twin != speaker
-                    ? root
-                    : speaker;
+                    twin = known;
+                    break;
+                }
+
+                merged[speaker] = twin is { } t ? merged[t] : speaker;
             }
 
             var byNewSpeaker = voices
@@ -303,6 +317,7 @@ public sealed class SpeakerDiarizer
         string audioPath, IReadOnlyList<VoiceSegment> voices, CancellationToken ct)
     {
         var names = new Dictionary<string, string>();
+        var scores = new Dictionary<string, float>();
 
         try
         {
@@ -334,10 +349,25 @@ public sealed class SpeakerDiarizer
                 var embedding = embedder.Compute(piece);
                 if (embedding is null) continue;
 
-                var hit = store.Recognize(embedding);
+                // Порог строже, чем у карточки на экране: там человек тут же подтвердит
+                // или опровергнет, а имя в стенограмме уйдёт в архив без проверки.
+                // Ложное имя опаснее честного «Собеседник N».
+                var hit = store.Recognize(embedding, TranscriptNamingThreshold);
                 if (hit is null) continue;
 
+                // Одно имя — одному голосу. Если тот же человек «узнался» во втором кластере,
+                // значит либо кластеры не слились, либо узнавание врёт: оставляем имя тому,
+                // где похожесть выше, второй остаётся безымянным.
+                var taken = names.FirstOrDefault(n => n.Value == hit.Value.Print.Name);
+                if (taken.Key is not null)
+                {
+                    if (scores[taken.Key] >= hit.Value.Similarity) continue;
+                    names.Remove(taken.Key);
+                    scores.Remove(taken.Key);
+                }
+
                 names[$"spk{group.Key + 1}"] = hit.Value.Print.Name;
+                scores[$"spk{group.Key + 1}"] = hit.Value.Similarity;
 
                 _log.LogInformation("Голос spk{Index} опознан как {Name} (похожесть {Score:N2})",
                     group.Key + 1, hit.Value.Print.Name, hit.Value.Similarity);
