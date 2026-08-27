@@ -797,6 +797,35 @@ public partial class App : Application
         window.Show();
     }
 
+    /// <summary>
+    /// «Это он» — подтверждение узнанного голоса. Отпечаток уточняется усреднением
+    /// с весом накопленных подтверждений: узнавание становится увереннее, а одна
+    /// случайная фраза не перебивает накопленное.
+    ///
+    /// Без этой кнопки память на голоса пополнялась только при первом знакомстве
+    /// и дальше не улучшалась.
+    /// </summary>
+    private void OnLineConfirmed(SpokenLine line)
+    {
+        if (_voices is null || line.Embedding is null || line.PrintId is not { } id) return;
+
+        try
+        {
+            var print = _voices.All.FirstOrDefault(p => p.Id == id);
+            if (print is null) return;
+
+            var updated = _voices.Remember(print.Name, print.Role, line.Embedding, line.Audio);
+
+            line.Known = true;
+            _subtitles?.ShowHint($"{updated.Name}: голос уточнён "
+                + $"({updated.Confirmations} подтверждений)");
+        }
+        catch (Exception ex)
+        {
+            LogError("voice-confirm", ex);
+        }
+    }
+
     /// <summary>Карточки автоснимков, ожидающих подтверждения.</summary>
     private ScreenshotConfirmWindow? _confirm;
 
@@ -866,6 +895,7 @@ public partial class App : Application
             {
                 _subtitles = new SubtitleOverlay();
                 _subtitles.LineAction += OnLineAction;
+                _subtitles.LineConfirmed += OnLineConfirmed;
 
                 // Сохраняем вдогонку: занятый файл настроек не должен ронять запись.
                 _subtitles.PositionChanged += point =>

@@ -277,7 +277,7 @@ public sealed class SpeakerDiarizer
 
     /// <summary>Отпечаток каждого голоса — по самому длинному его куску речи.</summary>
     private static Dictionary<int, float[]> BuildVoicePrints(
-        VoiceEmbedder embedder, float[] samples,
+        VoiceEmbedder embedder, Memory<float> samples,
         IReadOnlyList<VoiceSegment> voices, CancellationToken ct)
     {
         var prints = new Dictionary<int, float[]>();
@@ -296,8 +296,7 @@ public sealed class SpeakerDiarizer
             length = Math.Min(length, samples.Length - start);
             if (length < 16000) continue;
 
-            var piece = new float[length];
-            Array.Copy(samples, start, piece, 0, length);
+            var piece = samples.Slice(start, length).ToArray();
 
             var embedding = embedder.Compute(piece);
             if (embedding is not null) prints[group.Key] = embedding;
@@ -343,8 +342,7 @@ public sealed class SpeakerDiarizer
                 length = Math.Min(length, samples.Length - start);
                 if (length < 16000) continue;                      // короче секунды не берём
 
-                var piece = new float[length];
-                Array.Copy(samples, start, piece, 0, length);
+                var piece = samples.Slice(start, length).ToArray();
 
                 var embedding = embedder.Compute(piece);
                 if (embedding is null) continue;
@@ -414,7 +412,9 @@ public sealed class SpeakerDiarizer
         var samples = ReadMonoResampled(audioPath, diarizer.SampleRate);
         ct.ThrowIfCancellationRequested();
 
-        var result = diarizer.Process(samples);
+        // Движок принимает массив целиком, поэтому здесь копия неизбежна. Путь
+        // именования читает ту же дорожку и обходится уже без неё.
+        var result = diarizer.Process(samples.ToArray());
 
         return result
             .Select(s => new VoiceSegment((long)(s.Start * 1000), (long)(s.End * 1000), s.Speaker))
@@ -427,7 +427,16 @@ public sealed class SpeakerDiarizer
     /// бывают 96 кГц стерео, а сжатые лежат в MP3. Понижение — усреднением с фазовым
     /// накопителем: простое прореживание даёт слышимый призвук, который путает отпечатки.
     /// </summary>
-    private static float[] ReadMonoResampled(string path, int targetRate)
+    /// <summary>
+    /// Читает дорожку в моно на нужной частоте.
+    ///
+    /// Отдаём <see cref="Memory{T}"/>, а не массив, намеренно. Раньше отсчёты копились
+    /// в <c>List&lt;float&gt;</c> и в конце копировались через <c>ToArray()</c> — на
+    /// мгновение в памяти жили обе копии сразу. Час записи в 16 кГц это 230 МБ, значит
+    /// на двухчасовой встрече пик доходил до гигабайта, и «фоновая» разметка вставала
+    /// колом вместе со всем остальным. Теперь копии нет: отдаём тот же буфер и длину.
+    /// </summary>
+    private static Memory<float> ReadMonoResampled(string path, int targetRate)
     {
         var isMp3 = Path.GetExtension(path).Equals(".mp3", StringComparison.OrdinalIgnoreCase);
 
@@ -444,10 +453,11 @@ public sealed class SpeakerDiarizer
         var sourceRate = provider.WaveFormat.SampleRate;
         var decimation = sourceRate / (double)targetRate;
 
-        var output = new List<float>(
-            (int)(reader.TotalTime.TotalSeconds * targetRate) + targetRate);
+        // Длину знаем заранее из продолжительности дорожки. Запас в секунду — на
+        // округление при прореживании: промахнуться в меньшую сторону нельзя.
+        var output = new float[(int)(reader.TotalTime.TotalSeconds * targetRate) + targetRate];
+        var count = 0;
 
-        var frame = new float[channels];
         var buffer = new float[channels * 4096];
         double phase = 0, sum = 0;
         var summed = 0;
@@ -463,7 +473,7 @@ public sealed class SpeakerDiarizer
 
                 if (decimation <= 1.0)
                 {
-                    output.Add((float)mono);
+                    Append((float)mono);
                     continue;
                 }
 
@@ -473,14 +483,21 @@ public sealed class SpeakerDiarizer
                 if (phase < decimation) continue;
 
                 phase -= decimation;
-                output.Add((float)(sum / summed));
+                Append((float)(sum / summed));
                 sum = 0;
                 summed = 0;
             }
         }
 
-        _ = frame;
-        return output.ToArray();
+        return output.AsMemory(0, count);
+
+        // У MP3 продолжительность в заголовке бывает чуть меньше настоящей. Обрезать
+        // хвост встречи из-за этого нельзя — дотягиваем буфер по полминуты за раз.
+        void Append(float sample)
+        {
+            if (count == output.Length) Array.Resize(ref output, output.Length + targetRate * 30);
+            output[count++] = sample;
+        }
     }
 
     private static void RerenderMarkdown(MeetingFolder folder)

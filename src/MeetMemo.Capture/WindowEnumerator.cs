@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using MeetMemo.Capture.Interop;
 
 namespace MeetMemo.Capture;
@@ -84,18 +85,26 @@ public static class WindowEnumerator
                 Win32.GetWindowThreadProcessId(hWnd, out var pid);
                 if (pid == 0 || pid == self) return true;
 
-                string? processName = null;
-                string? exePath = null;
-                try
+                var exePath = Win32.GetProcessPath((int)pid);
+                string? processName;
+
+                if (exePath is not null)
                 {
-                    using var process = Process.GetProcessById((int)pid);
-                    processName = process.ProcessName;
-                    try { exePath = process.MainModule?.FileName; }
-                    catch (Exception) { /* доступ к модулю может быть закрыт */ }
+                    processName = Path.GetFileNameWithoutExtension(exePath);
                 }
-                catch (ArgumentException)
+                else
                 {
-                    return true; // процесс уже завершился
+                    // Путь закрыт (системный или сторонний процесс с урезанным доступом) —
+                    // имя всё равно нужно, оно решает, отмечено приложение или нет.
+                    try
+                    {
+                        using var process = Process.GetProcessById((int)pid);
+                        processName = process.ProcessName;
+                    }
+                    catch (Exception)
+                    {
+                        return true; // процесс уже завершился
+                    }
                 }
 
                 // У свёрнутого окна система отдаёт размер 276x45 в координатах -32000,

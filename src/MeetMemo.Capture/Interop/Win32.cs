@@ -29,6 +29,47 @@ public static class Win32
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd);
 
+    private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, bool inherit, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool QueryFullProcessImageNameW(
+        IntPtr process, uint flags, StringBuilder name, ref uint size);
+
+    /// <summary>
+    /// Путь к исполняемому файлу процесса.
+    ///
+    /// Раньше его брали через <c>Process.MainModule.FileName</c>, а тот перечисляет все
+    /// модули процесса — десятки миллисекунд на процесс. Список окон перестраивается
+    /// каждые три секунды, и на два десятка окон это складывалось в заметное подвисание.
+    /// Здесь один системный вызов, который просто отдаёт путь.
+    /// </summary>
+    public static string? GetProcessPath(int processId)
+    {
+        var handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)processId);
+        if (handle == IntPtr.Zero) return null;
+
+        try
+        {
+            var size = 1024u;
+            var buffer = new StringBuilder((int)size);
+
+            return QueryFullProcessImageNameW(handle, 0, buffer, ref size)
+                ? buffer.ToString()
+                : null;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern int GetWindowTextW(IntPtr hWnd, StringBuilder text, int count);
 

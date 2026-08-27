@@ -44,7 +44,13 @@ public sealed class SpokenLine : INotifyPropertyChanged
     public bool Known
     {
         get => _known;
-        set { _known = value; Changed(nameof(WhoBrush)); Changed(nameof(ActionLabel)); }
+        set
+        {
+            _known = value;
+            Changed(nameof(WhoBrush));
+            Changed(nameof(ActionLabel));
+            Changed(nameof(ConfirmVisibility));
+        }
     }
 
     public Brush WhoBrush => Channel == AudioChannel.Microphone
@@ -62,6 +68,15 @@ public sealed class SpokenLine : INotifyPropertyChanged
         Channel == AudioChannel.Microphone || Embedding is null
             ? Visibility.Collapsed
             : Visibility.Visible;
+
+    /// <summary>
+    /// Подтвердить можно только узнанный голос: у незнакомого подтверждать нечего,
+    /// его сначала называют. Своему микрофону подтверждение тоже ни к чему.
+    /// </summary>
+    public Visibility ConfirmVisibility =>
+        Known && ActionVisibility == Visibility.Visible
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -116,6 +131,13 @@ public partial class SubtitleOverlay : Window
 
     /// <summary>Человек выбрал реплику, чтобы назвать или поправить говорящего.</summary>
     public event Action<SpokenLine>? LineAction;
+
+    /// <summary>
+    /// Голос подтвердили: «да, это он». Отпечаток уточняется усреднением с весом
+    /// накопленных подтверждений — узнавание после этого увереннее, а одна неудачная
+    /// фраза не перебивает накопленное.
+    /// </summary>
+    public event Action<SpokenLine>? LineConfirmed;
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
@@ -252,28 +274,41 @@ public partial class SubtitleOverlay : Window
 
         if (x < Left || x > Left + Width || y < Top || y > Top + ActualHeight) return;
 
-        if (HitTest(CollapseButton, cursor)) { ToggleCollapsed(); return; }
+        if (Probe(new Point(x - Left, y - Top)) is not { } hit) return;
 
-        if (_collapsed || _lines.Count == 0) return;
+        switch (hit.Action)
+        {
+            case "collapse":
+                ToggleCollapsed();
+                return;
 
-        // Кнопки живут у правого края; клик по тексту ничего не переключает.
-        if (x < Left + Width - 90) return;
+            case "confirm" when hit.Line is { } confirmed:
+                LineConfirmed?.Invoke(confirmed);
+                return;
 
-        // Шапка не относится к строкам: её высоту вычитаем, иначе первая строка
-        // получала бы чужие нажатия.
-        var listTop = Top + HeaderRow.ActualHeight + HeaderRow.Margin.Bottom + 10;
-        if (y < listTop) return;
+            case "rename" when hit.Line is { } renamed:
+                LineAction?.Invoke(renamed);
+                return;
+        }
+    }
 
-        var rowHeight = (ActualHeight - (listTop - Top)) / _lines.Count;
-        if (rowHeight <= 0) return;
+    /// <summary>
+    /// Что находится под курсором. Раньше строку вычисляли делением высоты панели
+    /// на число реплик, но реплики разной высоты: длинная переносится на две-три
+    /// строки, и нажатие уходило соседней. Спрашиваем у самого дерева — оно знает
+    /// точно, и заодно различает две кнопки в одной строке.
+    /// </summary>
+    private (string Action, SpokenLine? Line)? Probe(Point windowPoint)
+    {
+        var found = VisualTreeHelper.HitTest(this, windowPoint)?.VisualHit;
 
-        var index = (int)((y - listTop) / rowHeight);
-        if (index < 0 || index >= _lines.Count) return;
+        for (var node = found; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is FrameworkElement { Tag: string action } element)
+                return (action, element.DataContext as SpokenLine);
+        }
 
-        var line = _lines[index];
-        if (line.ActionVisibility != Visibility.Visible) return;
-
-        LineAction?.Invoke(line);
+        return null;
     }
 
     /// <summary>Панель перетащили — приложение запоминает место между встречами.</summary>
@@ -333,9 +368,39 @@ public partial class SubtitleOverlay : Window
             : Visibility.Visible;
 
         CollapseLabel.Text = _collapsed ? "Развернуть" : "Свернуть";
-        HeaderText.Text = _collapsed ? "Стенограмма идёт" : "Стенограмма";
+        RestoreHeader();
 
         CollapsedChanged?.Invoke(_collapsed);
+    }
+
+    private void RestoreHeader() =>
+        HeaderText.Text = _collapsed ? "Стенограмма идёт" : "Стенограмма";
+
+    private DispatcherTimer? _hintTimer;
+
+    /// <summary>
+    /// Короткий ответ на действие прямо в шапке. Нажали «Это он» — должно быть видно,
+    /// что нажатие дошло: своего окна у этой панели нет, и подтвердить действие
+    /// больше негде.
+    /// </summary>
+    public void ShowHint(string text)
+    {
+        HeaderText.Text = text;
+
+        _hintTimer?.Stop();
+        _hintTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromSeconds(4)
+        };
+
+        _hintTimer.Tick += (_, _) =>
+        {
+            _hintTimer?.Stop();
+            _hintTimer = null;
+            RestoreHeader();
+        };
+
+        _hintTimer.Start();
     }
 
     /// <summary>Панель свернули или развернули — состояние переживает перезапуск.</summary>
