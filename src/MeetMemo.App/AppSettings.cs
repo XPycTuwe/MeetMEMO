@@ -128,6 +128,16 @@ public sealed record AppSettings
     [JsonPropertyName("system_overlay_y")]
     public double? SystemOverlayY { get; init; }
 
+    /// <summary>Куда пользователь перетащил панель стенограммы и свёрнута ли она.</summary>
+    [JsonPropertyName("subtitles_x")]
+    public double? SubtitlesX { get; init; }
+
+    [JsonPropertyName("subtitles_y")]
+    public double? SubtitlesY { get; init; }
+
+    [JsonPropertyName("subtitles_collapsed")]
+    public bool SubtitlesCollapsed { get; init; }
+
     public bool IsTracked(string? processName) =>
         processName is not null
         && TrackedApps.Any(a => string.Equals(a, processName, StringComparison.OrdinalIgnoreCase));

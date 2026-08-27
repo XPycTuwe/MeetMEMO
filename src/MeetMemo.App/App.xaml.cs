@@ -860,10 +860,31 @@ public partial class App : Application
             {
                 _subtitles = new SubtitleOverlay();
                 _subtitles.LineAction += OnLineAction;
+
+                // Сохраняем вдогонку: занятый файл настроек не должен ронять запись.
+                _subtitles.PositionChanged += point =>
+                {
+                    _settings = _settings with { SubtitlesX = point.X, SubtitlesY = point.Y };
+                    _ = _settings.SaveAsync();
+                };
+
+                _subtitles.CollapsedChanged += collapsed =>
+                {
+                    _settings = _settings with { SubtitlesCollapsed = collapsed };
+                    _ = _settings.SaveAsync();
+                };
             }
 
             _subtitles.Reset();
             _subtitles.Show();
+
+            // После Show: до него окно не измерено, и проверка «поместится ли на экране»
+            // работала бы по нулевой высоте.
+            _subtitles.Restore(
+                _settings.SubtitlesX is { } x && _settings.SubtitlesY is { } y
+                    ? new Point(x, y)
+                    : null,
+                _settings.SubtitlesCollapsed);
         }
         catch (Exception ex)
         {

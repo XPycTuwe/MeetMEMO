@@ -151,10 +151,30 @@ public partial class SubtitleOverlay : Window
     private void PlaceAtBottom()
     {
         var area = SystemParameters.WorkArea;
-
         Width = Math.Min(620, area.Width * 0.42);
+
+        // Панель, которую поставили руками, не двигаем: иначе она прыгала бы обратно
+        // в угол на каждой новой реплике.
+        if (_placed)
+        {
+            KeepOnScreen(area);
+            return;
+        }
+
         Left = area.Right - Width - 24;
         Top = area.Bottom - ActualHeight - 24;
+    }
+
+    /// <summary>
+    /// Держит панель в пределах экрана. Высота меняется с числом реплик, и панель,
+    /// поставленную у нижнего края, новая строка вытолкнула бы под панель задач.
+    /// </summary>
+    private void KeepOnScreen(Rect area)
+    {
+        if (Top + ActualHeight > area.Bottom) Top = area.Bottom - ActualHeight;
+        if (Top < area.Top) Top = area.Top;
+        if (Left + Width > area.Right) Left = area.Right - Width;
+        if (Left < area.Left) Left = area.Left;
     }
 
     /// <summary>Новая распознанная реплика в конец списка.</summary>
@@ -200,12 +220,31 @@ public partial class SubtitleOverlay : Window
     private void HandleClicks()
     {
         var down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        var hasCursor = GetCursorPos(out var cursor);
 
-        if (down) { _mouseWasDown = true; return; }
+        if (down)
+        {
+            if (hasCursor) HandleDrag(cursor);
+            _mouseWasDown = true;
+            return;
+        }
+
         if (!_mouseWasDown) return;
         _mouseWasDown = false;
 
-        if (_lines.Count == 0 || !GetCursorPos(out var cursor)) return;
+        // Кнопку отпустили — начатое перетаскивание закончилось в любом случае.
+        var wasDragging = _dragging;
+        _dragStart = null;
+        _dragging = false;
+
+        // Панель тащили, а не нажимали: место запомнили, действие не выполняем.
+        if (wasDragging)
+        {
+            PositionChanged?.Invoke(new Point(Left, Top));
+            return;
+        }
+
+        if (!hasCursor) return;
 
         var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
         var x = cursor.X / scale;
@@ -213,16 +252,128 @@ public partial class SubtitleOverlay : Window
 
         if (x < Left || x > Left + Width || y < Top || y > Top + ActualHeight) return;
 
+        if (HitTest(CollapseButton, cursor)) { ToggleCollapsed(); return; }
+
+        if (_collapsed || _lines.Count == 0) return;
+
         // Кнопки живут у правого края; клик по тексту ничего не переключает.
         if (x < Left + Width - 90) return;
 
-        var rowHeight = ActualHeight / _lines.Count;
-        var index = (int)((y - Top) / rowHeight);
+        // Шапка не относится к строкам: её высоту вычитаем, иначе первая строка
+        // получала бы чужие нажатия.
+        var listTop = Top + HeaderRow.ActualHeight + HeaderRow.Margin.Bottom + 10;
+        if (y < listTop) return;
+
+        var rowHeight = (ActualHeight - (listTop - Top)) / _lines.Count;
+        if (rowHeight <= 0) return;
+
+        var index = (int)((y - listTop) / rowHeight);
         if (index < 0 || index >= _lines.Count) return;
 
         var line = _lines[index];
         if (line.ActionVisibility != Visibility.Visible) return;
 
         LineAction?.Invoke(line);
+    }
+
+    /// <summary>Панель перетащили — приложение запоминает место между встречами.</summary>
+    public event Action<Point>? PositionChanged;
+
+    private System.Drawing.Point? _dragStart;
+    private Point _windowAtDragStart;
+    private bool _dragging;
+    private bool _collapsed;
+
+    /// <summary>Место выбрано человеком — автоматическое размещение его больше не трогает.</summary>
+    private bool _placed;
+
+    /// <summary>Насколько нужно увести мышь, чтобы это считалось перетаскиванием, а не щелчком.</summary>
+    private const int DragThreshold = 4;
+
+    /// <summary>
+    /// Перетаскивание за шапку. Как и кнопки, отслеживается опросом координат:
+    /// окно создано без активации, и события мыши до него не доходят.
+    /// </summary>
+    private void HandleDrag(POINT cursor)
+    {
+        if (_dragStart is null)
+        {
+            if (!_mouseWasDown && HitTest(HeaderRow, cursor) && !HitTest(CollapseButton, cursor))
+            {
+                _dragStart = new System.Drawing.Point(cursor.X, cursor.Y);
+                _windowAtDragStart = new Point(Left, Top);
+            }
+
+            return;
+        }
+
+        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        var dx = (cursor.X - _dragStart.Value.X) / scale;
+        var dy = (cursor.Y - _dragStart.Value.Y) / scale;
+
+        if (!_dragging && Math.Abs(dx) < DragThreshold && Math.Abs(dy) < DragThreshold) return;
+
+        _dragging = true;
+        _placed = true;
+        Left = _windowAtDragStart.X + dx;
+        Top = _windowAtDragStart.Y + dy;
+    }
+
+    /// <summary>
+    /// Сворачивает панель до одной шапки. Пульсирующая точка остаётся видна: свёрнутая
+    /// стенограмма всё равно должна показывать, что запись идёт.
+    /// </summary>
+    private void ToggleCollapsed()
+    {
+        _collapsed = !_collapsed;
+
+        Lines.Visibility = _collapsed ? Visibility.Collapsed : Visibility.Visible;
+        IdleRow.Visibility = _collapsed || _lines.Count > 0
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+        CollapseLabel.Text = _collapsed ? "Развернуть" : "Свернуть";
+        HeaderText.Text = _collapsed ? "Стенограмма идёт" : "Стенограмма";
+
+        CollapsedChanged?.Invoke(_collapsed);
+    }
+
+    /// <summary>Панель свернули или развернули — состояние переживает перезапуск.</summary>
+    public event Action<bool>? CollapsedChanged;
+
+    /// <summary>Восстанавливает место и свёрнутость с прошлого раза.</summary>
+    public void Restore(Point? position, bool collapsed)
+    {
+        if (collapsed != _collapsed) ToggleCollapsed();
+
+        if (position is not { } point) return;
+
+        // Сохранённое место могло уехать за границы: монитор отключили или сменили
+        // разрешение. Проверяем, что панель останется видимой.
+        var area = SystemParameters.WorkArea;
+        if (point.X < area.Left - 40 || point.X > area.Right - 80) return;
+        if (point.Y < area.Top - 10 || point.Y > area.Bottom - 40) return;
+
+        Left = point.X;
+        Top = point.Y;
+        _placed = true;
+    }
+
+    private bool HitTest(FrameworkElement element, POINT cursor)
+    {
+        if (!element.IsVisible) return false;
+
+        try
+        {
+            var topLeft = element.PointToScreen(new Point(0, 0));
+            var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+
+            return cursor.X >= topLeft.X && cursor.X <= topLeft.X + element.ActualWidth * scale
+                && cursor.Y >= topLeft.Y && cursor.Y <= topLeft.Y + element.ActualHeight * scale;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 }

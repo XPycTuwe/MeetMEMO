@@ -17,6 +17,41 @@
     <Border Background="#B8000000" CornerRadius="10" Padding="14,10"
             HorizontalAlignment="Right">
         <StackPanel>
+            <!-- Шапка: за неё панель таскают, ею же сворачивают. Заголовок нужен
+                 и как ручка: у окна нет рамки, хвататься больше не за что. -->
+            <Grid x:Name="HeaderRow" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Ellipse Grid.Column="0" Width="8" Height="8" Fill="#FFE53935"
+                         VerticalAlignment="Center" Margin="0,0,8,0">
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard RepeatBehavior="Forever">
+                                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                     From="1" To="0.25" Duration="0:0:0.9"
+                                                     AutoReverse="True" />
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+
+                <TextBlock x:Name="HeaderText" Grid.Column="1" Text="Стенограмма"
+                           FontFamily="Segoe UI" FontSize="11" Foreground="#99FFFFFF"
+                           VerticalAlignment="Center" />
+
+                <Border x:Name="CollapseButton" Grid.Column="2" Background="#33FFFFFF"
+                        CornerRadius="4" Padding="9,2" Margin="8,0,0,0">
+                    <TextBlock x:Name="CollapseLabel" Text="Свернуть"
+                               FontFamily="Segoe UI" FontSize="11" Foreground="#FFF3F6FA" />
+                </Border>
+            </Grid>
+
             <ItemsControl x:Name="Lines">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
@@ -53,21 +88,9 @@
             </ItemsControl>
 
             <!-- Пока никто не говорил: показываем, что стенограмма жива -->
+            <!-- Пульсирующая точка переехала в шапку: она нужна и в свёрнутом виде,
+                 а две одинаковые точки на панели выглядели ошибкой. -->
             <StackPanel x:Name="IdleRow" Orientation="Horizontal">
-                <Ellipse Width="9" Height="9" Fill="#FFE53935" VerticalAlignment="Center"
-                         Margin="0,0,10,0">
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard RepeatBehavior="Forever">
-                                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                     From="1" To="0.25" Duration="0:0:0.9"
-                                                     AutoReverse="True" />
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
-                </Ellipse>
                 <TextBlock Text="слушаю…" FontFamily="Segoe UI" FontSize="14"
                            Foreground="#FFF3F6FA" VerticalAlignment="Center" />
             </StackPanel>
