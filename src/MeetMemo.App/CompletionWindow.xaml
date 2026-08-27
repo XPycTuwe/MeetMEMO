@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Встреча записана"
         Icon="Assets/app.ico"
-        Height="420" Width="620" MinWidth="420" MinHeight="320"
+        Height="470" Width="620" MinWidth="420" MinHeight="370"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         Background="#FFF7F8FA">
@@ -24,22 +24,46 @@
 
             <!-- Название правится прямо здесь: сразу после встречи это первое, что хочется
                  сделать, и гонять человека в отдельный диалог ради одной строки незачем.
-                 Поле выглядит как заголовок, пока в него не встали. -->
+                 Раньше поле было без рамки и выглядело заголовком — по нему не было
+                 видно, что название вообще можно менять. Теперь это обычное поле
+                 с подписью: понятно с первого взгляда, без подсказок. -->
             <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                <TextBlock Text="Название встречи"
+                           FontFamily="Segoe UI" FontSize="11" Foreground="#FF667085"
+                           Margin="2,0,0,4" />
+
                 <TextBox x:Name="TitleBox" Text="Встреча"
-                         FontFamily="Segoe UI" FontSize="20" FontWeight="SemiBold"
-                         Foreground="#FF1F2937" Background="Transparent"
-                         BorderThickness="0" Padding="0" Margin="-2,0,0,0"
-                         LostFocus="OnTitleCommitted" KeyDown="OnTitleKeyDown" />
+                         FontFamily="Segoe UI" FontSize="18" FontWeight="SemiBold"
+                         Foreground="#FF1F2937" Padding="9,6"
+                         VerticalContentAlignment="Center"
+                         LostFocus="OnTitleCommitted" KeyDown="OnTitleKeyDown">
+                    <TextBox.Style>
+                        <Style TargetType="TextBox">
+                            <Setter Property="Background" Value="White" />
+                            <Setter Property="BorderBrush" Value="#FFD0D5DD" />
+                            <Setter Property="BorderThickness" Value="1" />
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF98A2B3" />
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF2E74B5" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBox.Style>
+                </TextBox>
+
                 <TextBlock x:Name="HeaderText" Text="Встреча записана"
                            FontFamily="Segoe UI" FontSize="12" Foreground="#FF667085"
-                           Margin="0,2,0,0" />
+                           Margin="2,5,0,0" />
             </StackPanel>
 
             <!-- Главное действие карточки — наверху и особняком: внизу, в ряду с удалением,
                  оно терялось среди прочего. -->
             <Button x:Name="ZipButton" Grid.Column="1" Click="OnCreateZipClick"
-                    Padding="12,7" Background="#FF2E74B5" Foreground="White"
+                    VerticalAlignment="Center" Padding="12,7"
+                    Background="#FF2E74B5" Foreground="White"
                     BorderThickness="0" Cursor="Hand">
                 <Button.Template>
                     <ControlTemplate TargetType="Button">

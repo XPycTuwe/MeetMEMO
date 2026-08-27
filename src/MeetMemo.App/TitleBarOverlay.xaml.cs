@@ -307,6 +307,17 @@ public partial class TitleBarOverlay : Window
             return;
         }
 
+        // За раз пишется одна встреча. Пока идёт запись, значок на других отмеченных
+        // окнах предлагал бы начать вторую — а она всё равно не начнётся. Убираем его
+        // до конца записи, чтобы не звать туда, куда нельзя.
+        var current = _controller?.State ?? SessionState.Idle;
+        if (current is SessionState.Recording or SessionState.Paused
+            && RecordingTarget != _targetWindow)
+        {
+            if (IsVisible) Hide();
+            return;
+        }
+
         if (!IsVisible) Show();
     }
 

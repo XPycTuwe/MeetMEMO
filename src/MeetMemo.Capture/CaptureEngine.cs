@@ -53,6 +53,25 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
     private long _lastAutoOffsetMs = -1;
     private bool _paused;
     private bool _targetLostReported;
+    private bool _targetMinimized;
+    private readonly MinimizeWatcher _minimizeWatcher = new(MinimizeWarnCooldown);
+
+    /// <summary>
+    /// Окно встречи закрыли, а запись идёт. Звук при этом никуда не девается — дорожка
+    /// сама переходит на общий звук системы, — но снимков больше не будет, и человек
+    /// об этом узнаёт только по пустой папке. Обрывать запись за него нельзя: он мог
+    /// закрыть окно намеренно и продолжать говорить. Поэтому спрашиваем.
+    /// </summary>
+    public event Action? TargetClosed;
+
+    /// <summary>
+    /// Окно свернули или развернули обратно. У свёрнутого окна система не отдаёт кадры,
+    /// автоснимки на это время встают.
+    /// </summary>
+    public event Action<bool>? TargetMinimizedChanged;
+
+    /// <summary>Как часто напоминать про свёрнутое окно, если его сворачивают снова и снова.</summary>
+    private static readonly TimeSpan MinimizeWarnCooldown = TimeSpan.FromMinutes(5);
 
     /// <summary>Собирать ли текст из окна встречи. Выключается настройкой приложения.</summary>
     public static bool CollectWindowContext { get; set; } = true;
@@ -75,6 +94,10 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
     private void TryCollectContext()
     {
         if (_context is null || _paused || _context_writer is null) return;
+
+        // Обход дерева доступности тяжёлого окна занимает секунды, а таймер этого не ждёт:
+        // такты накладывались и забивали пул потоков.
+        if (Interlocked.Exchange(ref _contextBusy, 1) == 1) return;
 
         try
         {
@@ -101,6 +124,10 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
             // Контекст — приятное дополнение, а не основа пакета: его сбой не должен
             // мешать записи встречи.
             _log.LogDebug(ex, "Не удалось снять контекст окна");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _contextBusy, 0);
         }
     }
 
@@ -156,6 +183,8 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
         _targetLostReported = false;
         _lastAutoOffsetMs = -1;
         _lastHash = 0;
+        _targetMinimized = false;
+        _minimizeWatcher.Reset();
 
         _targetWindow = context.Request.Target?.WindowHandle ?? 0;
         _applicationName = context.Request.Target?.ApplicationName;
@@ -262,18 +291,28 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
     private void TryAutoCapture()
     {
         if (_context is null || _screenshots is null || _paused || _targetWindow == 0) return;
-        if (!_autoEnabled) return;
-        if (!_degradation.AreAutoScreenshotsAllowed) return;
+
+        // Наложение тактов: снимок 4K-окна со сжатием и распознаванием текста иногда
+        // не укладывается в интервал, а таймер этого не ждёт — второй такт начинался
+        // поверх первого, и они дрались за пул потоков.
+        if (Interlocked.Exchange(ref _autoBusy, 1) == 1) return;
 
         try
         {
+            // За окном следим всегда, даже когда автоснимки выключены: закрытое окно
+            // встречи — повод спросить человека, а не молча продолжать запись.
             if (!WindowEnumerator.IsAlive(_targetWindow))
             {
+                if (!_targetLostReported) TargetClosed?.Invoke();
                 NotifyTargetProblem("окно закрыто");
                 return;
             }
 
-            if (Interop.Win32.IsIconic(_targetWindow)) return;
+            UpdateMinimizedState(Interop.Win32.IsIconic(_targetWindow));
+
+            if (!_autoEnabled) return;
+            if (!_degradation.AreAutoScreenshotsAllowed) return;
+            if (_targetMinimized) return;
 
             var offset = _context.Clock.ElapsedMs;
             if (_lastAutoOffsetMs >= 0
@@ -313,6 +352,27 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
         {
             _log.LogError(ex, "Автоснимок не удался");
         }
+        finally
+        {
+            Interlocked.Exchange(ref _autoBusy, 0);
+        }
+    }
+
+    private int _autoBusy;
+    private int _contextBusy;
+
+    /// <summary>
+    /// Следит за сворачиванием окна. Свёрнутое окно кадров не отдаёт, и человек должен
+    /// узнать об этом сразу, а не по пустой папке снимков после встречи. Повторные
+    /// сворачивания придерживаем: за час их бывает много, и всплывающая подсказка
+    /// на каждое превратилась бы в шум.
+    /// </summary>
+    private void UpdateMinimizedState(bool minimized)
+    {
+        _targetMinimized = minimized;
+
+        if (_minimizeWatcher.Update(minimized, _context?.Clock.ElapsedMs ?? 0) is { } tell)
+            TargetMinimizedChanged?.Invoke(tell);
     }
 
     /// <summary>

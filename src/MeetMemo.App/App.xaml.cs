@@ -586,6 +586,10 @@ public partial class App : Application
         _controller.UserFacingError += message =>
             Dispatcher.BeginInvoke(() => _tray?.ShowBalloonTip("MeetMemo", message, BalloonIcon.Error));
 
+        _capture.TargetClosed += () => Dispatcher.BeginInvoke(OnTargetClosed);
+        _capture.TargetMinimizedChanged += minimized =>
+            Dispatcher.BeginInvoke(() => OnTargetMinimized(minimized));
+
         // Голос узнаётся, как только человек заговорил, — не дожидаясь, пока он договорит
         // и фраза будет распознана. Имя успевает появиться раньше текста.
         _asr.SpeechStarted += (channel, head) =>
@@ -647,18 +651,20 @@ public partial class App : Application
             });
         };
 
+        // Целевое окно объявляем до старта, а не после: состояние успевает смениться
+        // внутри SendAsync, и значок на записываемом окне на такт пропадал бы вместе
+        // со значками остальных.
+        TitleBarOverlay.RecordingTarget = request.Target?.WindowHandle ?? 0;
+
         var result = await _controller.SendAsync(new SessionCommand.Start(request));
         if (!result.Accepted)
         {
+            TitleBarOverlay.RecordingTarget = 0;
             ShowMessageNow($"Не удалось начать запись: {result.Message}", "MeetMemo",
                 MessageBoxButton.OK, MessageBoxImage.Error);
             await DisposeSessionAsync();
             return;
         }
-
-        // Кнопки в заголовке должны знать, какое именно окно сейчас пишется:
-        // у остальных отмеченных окон запись начать нельзя, пока идёт эта.
-        TitleBarOverlay.RecordingTarget = request.Target?.WindowHandle ?? 0;
 
         if (request.Target is null)
         {
@@ -972,6 +978,49 @@ public partial class App : Application
                 _ => (LoadIcon("tray-idle.ico"), "MeetMemo — готов к записи")
             };
         });
+    }
+
+    /// <summary>
+    /// Окно встречи закрыли, а запись идёт. Сама по себе она не бессмысленна — звук
+    /// переходит на общий системный, и разговор продолжает писаться, — но чаще всего
+    /// крестик означает, что встреча кончилась и человек про запись просто забыл.
+    /// Обрывать за него нельзя, спросить нужно.
+    /// </summary>
+    private async void OnTargetClosed()
+    {
+        if (_controller is null) return;
+        if (_controller.State is not (SessionState.Recording or SessionState.Paused)) return;
+
+        var answer = ShowMessageNow(
+            "Окно встречи закрыто, но запись продолжается.\n\n"
+            + "Снимков экрана больше не будет, звук пишется с общего выхода системы.\n\n"
+            + "Остановить запись и собрать пакет?",
+            "MeetMemo", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (answer != MessageBoxResult.Yes) return;
+
+        await _controller.SendAsync(new SessionCommand.Stop());
+    }
+
+    /// <summary>
+    /// Свёрнутое окно система не рисует и кадров не отдаёт. Молчать об этом нельзя:
+    /// человек узнавал бы о пропаже снимков уже после встречи, по пустой папке.
+    /// </summary>
+    private void OnTargetMinimized(bool minimized)
+    {
+        if (_tray is null) return;
+
+        if (minimized)
+        {
+            _tray.ShowBalloonTip("MeetMemo",
+                "Окно встречи свёрнуто — снимки экрана приостановлены. "
+                + "Звук и стенограмма пишутся как обычно.",
+                BalloonIcon.Warning);
+            return;
+        }
+
+        _tray.ShowBalloonTip("MeetMemo", "Окно снова на экране — снимки продолжаются.",
+            BalloonIcon.Info);
     }
 
     private void OnSessionCompleted(SessionResult result)
