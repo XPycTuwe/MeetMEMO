@@ -44,6 +44,10 @@ public sealed class ExportPlan
     /// <summary>Есть ли в составе исходное аудио — повод предупредить отдельно.</summary>
     public bool ContainsAudio => Items.Any(i => i.Included && i.Category == ExportCategory.Audio);
 
+    /// <summary>Есть ли в пакете слова на разбор — упоминать их в README только тогда.</summary>
+    public bool ContainsGlossaryCandidates =>
+        Items.Any(i => i.Included && i.RelativePath == "glossary-candidates.md");
+
     public static string FormatSize(long bytes) => bytes switch
     {
         < 1024 => $"{bytes} Б",
@@ -92,6 +96,7 @@ public static class ExportPlanBuilder
         AddFile(folder.TranscriptJsonl, ExportCategory.Transcript);
         AddFile(folder.TranscriptMd, ExportCategory.Transcript);
         AddFile(folder.GlossaryMd, ExportCategory.Transcript);
+        AddFile(Path.Combine(meetingFolderPath, "glossary-candidates.md"), ExportCategory.Transcript);
         AddFile(folder.ContextJsonl, ExportCategory.Metadata);
         AddFile(Path.Combine(meetingFolderPath, "transcript.live.jsonl"), ExportCategory.Transcript, false);
 

@@ -1206,6 +1206,27 @@ public partial class App : Application
             LogError("diarize", ex);
         }
 
+        try
+        {
+            // Кандидатов ищем после разбора: к этому моменту стенограмма окончательная.
+            // Словарь читаем заново — человек мог дополнить его прямо во время встречи.
+            var folder = new MeetingFolder(folderPath);
+            var glossary = new GlossaryStore();
+
+            var segments = JsonlWriter.ReadAll<TranscriptSegment>(folder.TranscriptJsonl);
+            var candidates = GlossaryCandidates.Collect(segments, glossary.All);
+
+            if (candidates.Count > 0)
+            {
+                GlossaryCandidates.WriteToMeeting(folder, candidates);
+                report.Add($"слов на разбор в словарь: {candidates.Count}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError("glossary", ex);
+        }
+
         var summary = report.Count > 0
             ? "Готово — " + string.Join(", ", report) + "."
             : "Готово: дорабатывать было нечего.";

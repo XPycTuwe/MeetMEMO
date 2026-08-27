@@ -84,27 +84,13 @@ public static class TranscriptRenderer
 }
 
 /// <summary>
-/// Пустой glossary.md кладём в папку встречи при финализации: Skill его читает, пользователь
-/// дополняет терминами, которые распознаватель стабильно портит (ТЗ 13.3).
+/// Кладёт словарь терминов в папку встречи при финализации (ТЗ 13.3).
+///
+/// Раньше сюда клали пустой шаблон, и заполнять его надо было заново в каждой встрече.
+/// Теперь словарь один на все встречи — <see cref="GlossaryStore"/> — а сюда попадает
+/// его копия: Skill читает её и исправляет по ней искажённые термины.
 /// </summary>
 public static class GlossaryTemplate
 {
-    public static async Task EnsureAsync(MeetingFolder folder, CancellationToken ct)
-    {
-        if (File.Exists(folder.GlossaryMd)) return;
-
-        const string template = """
-            # Словарь встречи
-
-            Термины, имена и сокращения, которые распознавание стабильно искажает.
-            Claude Skill использует этот файл, чтобы исправлять только подтверждённые ошибки.
-
-            | Как слышится | Верное написание | Пояснение |
-            |---|---|---|
-            |  |  |  |
-            """;
-
-        await File.WriteAllTextAsync(folder.GlossaryMd, template, new UTF8Encoding(false), ct)
-            .ConfigureAwait(false);
-    }
+    public static void Ensure(MeetingFolder folder) => new GlossaryStore().WriteToMeeting(folder);
 }

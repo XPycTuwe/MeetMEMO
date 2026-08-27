@@ -7,6 +7,7 @@ using MeetMemo.Asr;
 using MeetMemo.Audio;
 using MeetMemo.Capture;
 using MeetMemo.Contracts;
+using MeetMemo.Storage;
 
 namespace MeetMemo.App;
 
@@ -41,6 +42,7 @@ public partial class SettingsWindow : Window
 
         LoadRecordingTab();
         LoadVoices();
+        LoadGlossary();
         LoadModels();
         LoadMeetings();
 
@@ -322,6 +324,64 @@ public partial class SettingsWindow : Window
 
         _voices.Forget(row.Id);
         LoadVoices();
+    }
+
+    // ============================ Словарь ============================
+
+    private readonly GlossaryStore _glossary = new();
+
+    private void LoadGlossary()
+    {
+        var terms = _glossary.All
+            .OrderBy(t => t.Correct, StringComparer.CurrentCulture)
+            .ToList();
+
+        GlossaryList.ItemsSource = terms;
+
+        GlossarySubtitle.Text = terms.Count == 0
+            ? "Пока пусто. Термины, которые распознавание стабильно портит — КГФ, Ач3, фамилии — "
+              + "попадают сюда и дальше исправляются в каждой стенограмме автоматически."
+            : $"Терминов: {terms.Count}. Словарь кладётся в каждый архив встречи — "
+              + "по нему исправляются искажённые слова.";
+    }
+
+    private void OnTermSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (GlossaryList.SelectedItem is not GlossaryTerm term)
+        {
+            RemoveTermButton.IsEnabled = false;
+            return;
+        }
+
+        TermHeardBox.Text = term.Heard;
+        TermCorrectBox.Text = term.Correct;
+        TermMeaningBox.Text = term.Meaning ?? string.Empty;
+        RemoveTermButton.IsEnabled = true;
+    }
+
+    private void OnAddTerm(object sender, RoutedEventArgs e)
+    {
+        var heard = TermHeardBox.Text.Trim();
+        var correct = TermCorrectBox.Text.Trim();
+
+        if (heard.Length == 0 || correct.Length == 0)
+        {
+            GlossarySubtitle.Text = "Заполните оба поля: как слышится и как правильно.";
+            return;
+        }
+
+        _glossary.Add(heard, correct, TermMeaningBox.Text.Trim());
+
+        TermHeardBox.Text = TermCorrectBox.Text = TermMeaningBox.Text = string.Empty;
+        LoadGlossary();
+    }
+
+    private void OnRemoveTerm(object sender, RoutedEventArgs e)
+    {
+        if (GlossaryList.SelectedItem is not GlossaryTerm term) return;
+
+        _glossary.Remove(term.Heard);
+        LoadGlossary();
     }
 
     // ============================ Модели ============================

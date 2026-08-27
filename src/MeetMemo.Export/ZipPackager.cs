@@ -159,6 +159,12 @@ public sealed class ZipPackager
         await writer.WriteLineAsync("- `timeline.jsonl` — события с таймкодами;").ConfigureAwait(false);
         await writer.WriteLineAsync("- `transcript.jsonl` / `transcript.md` — стенограмма;").ConfigureAwait(false);
         await writer.WriteLineAsync("- `glossary.md` — словарь терминов встречи;").ConfigureAwait(false);
+        if (plan.ContainsGlossaryCandidates)
+        {
+            await writer.WriteLineAsync(
+                "- `glossary-candidates.md` — слова на разбор: что из них термины, решает Claude;")
+                .ConfigureAwait(false);
+        }
         await writer.WriteLineAsync("- `screenshots/` — снимки экрана и их индекс;").ConfigureAwait(false);
         if (plan.ContainsAudio)
             await writer.WriteLineAsync("- `audio/` — исходные аудиодорожки;").ConfigureAwait(false);

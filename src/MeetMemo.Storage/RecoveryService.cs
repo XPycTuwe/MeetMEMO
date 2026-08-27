@@ -90,7 +90,7 @@ public sealed class RecoveryService
         };
 
         TranscriptRenderer.Render(folder, manifest);
-        await GlossaryTemplate.EnsureAsync(folder, ct).ConfigureAwait(false);
+        GlossaryTemplate.Ensure(folder);
         await AtomicJsonStore.WriteAsync(folder.SessionJson, manifest, JsonSetup.Pretty, ct)
             .ConfigureAwait(false);
 

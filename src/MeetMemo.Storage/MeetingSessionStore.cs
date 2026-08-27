@@ -159,7 +159,7 @@ public sealed class MeetingSessionStore : ISessionStore, IAsyncDisposable
         await AtomicJsonStore.WriteAsync(_folder.SessionJson, _manifest, JsonSetup.Pretty, ct)
             .ConfigureAwait(false);
 
-        await GlossaryTemplate.EnsureAsync(_folder, ct).ConfigureAwait(false);
+        GlossaryTemplate.Ensure(_folder);
 
         _lock?.Dispose();
         _lock = null;

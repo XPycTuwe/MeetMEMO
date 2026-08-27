@@ -168,6 +168,72 @@
             </Grid>
         </TabItem>
 
+        <TabItem Header="Словарь">
+            <Grid Margin="14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="Словарь терминов" Style="{StaticResource Head}" />
+                    <TextBlock x:Name="GlossarySubtitle" Style="{StaticResource Label}" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <ListView x:Name="GlossaryList" Grid.Row="1" SelectionChanged="OnTermSelected">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Как слышится" Width="200"
+                                            DisplayMemberBinding="{Binding Heard}" />
+                            <GridViewColumn Header="Верное написание" Width="200"
+                                            DisplayMemberBinding="{Binding Correct}" />
+                            <GridViewColumn Header="Пояснение" Width="360"
+                                            DisplayMemberBinding="{Binding Meaning}" />
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+
+                <Grid Grid.Row="2" Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,0">
+                        <TextBlock Text="Как слышится" Style="{StaticResource Label}" Margin="0,0,0,4" />
+                        <TextBox x:Name="TermHeardBox" Padding="6,4" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="0" Grid.Column="1">
+                        <TextBlock Text="Верное написание" Style="{StaticResource Label}" Margin="0,0,0,4" />
+                        <TextBox x:Name="TermCorrectBox" Padding="6,4" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2">
+                        <TextBlock Text="Пояснение — что это значит" Style="{StaticResource Label}" />
+                        <TextBox x:Name="TermMeaningBox" Padding="6,4" />
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"
+                            Margin="0,14,0,0">
+                    <TextBlock Text="Термины подсказывает Claude после разбора встречи"
+                               VerticalAlignment="Center" FontSize="11" Foreground="#FF98A2B3"
+                               Margin="0,0,12,0" />
+                    <Button x:Name="RemoveTermButton" Content="Удалить" Padding="14,6" Margin="0,0,8,0"
+                            IsEnabled="False" Click="OnRemoveTerm" />
+                    <Button Content="Добавить или обновить" Padding="16,6" FontWeight="SemiBold"
+                            Click="OnAddTerm" />
+                </StackPanel>
+            </Grid>
+        </TabItem>
+
         <TabItem Header="Модели">
             <Grid Margin="14">
                 <Grid.RowDefinitions>
