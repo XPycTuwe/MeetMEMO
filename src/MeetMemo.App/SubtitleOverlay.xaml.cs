@@ -91,7 +91,9 @@ public sealed class SpokenLine : INotifyPropertyChanged
 /// соображаешь, кто это, человек договаривает и начинает говорить следующий — имя уходит
 /// не тому. Теперь фразы висят несколько штук, и каждая называется отдельно.
 ///
-/// Мышь отслеживается опросом координат: события WPF до окна без активации не доходят.
+/// С мышью тут пополам: WS_EX_NOACTIVATE глотает нажатия, но перемещения пропускает.
+/// Поэтому захват ловится опросом координат, а сама проводка идёт по живым событиям —
+/// на одном опросе панель ехала рывками.
 /// </summary>
 public partial class SubtitleOverlay : Window
 {
@@ -114,10 +116,15 @@ public partial class SubtitleOverlay : Window
         SourceInitialized += OnSourceInitialized;
         Loaded += (_, _) => PlaceAtBottom();
 
-        // Тем же тактом ловятся нажатия на «Назвать» и «Не он».
-        _timer = new DispatcherTimer(DispatcherPriority.Background)
+        // Движение мыши до окна доходит, а нажатия нет: WS_EX_NOACTIVATE глотает
+        // кнопки. Захват ловим опросом, а саму проводку ведём по живым событиям.
+        PreviewMouseMove += OnMouseMoved;
+
+        // Тем же тактом ловятся нажатия на «Назвать» и «Не он». Во время
+        // перетаскивания такт учащается — иначе панель едет рывками.
+        _timer = new DispatcherTimer(DispatcherPriority.Input)
         {
-            Interval = TimeSpan.FromMilliseconds(120)
+            Interval = TimeSpan.FromMilliseconds(IdlePollMs)
         };
         _timer.Tick += (_, _) =>
         {
@@ -258,6 +265,7 @@ public partial class SubtitleOverlay : Window
         var wasDragging = _dragging;
         _dragStart = null;
         _dragging = false;
+        _timer.Interval = TimeSpan.FromMilliseconds(IdlePollMs);
 
         // Панель тащили, а не нажимали: место запомнили, действие не выполняем.
         if (wasDragging)
@@ -325,6 +333,12 @@ public partial class SubtitleOverlay : Window
     /// <summary>Насколько нужно увести мышь, чтобы это считалось перетаскиванием, а не щелчком.</summary>
     private const int DragThreshold = 4;
 
+    /// <summary>Такт опроса во время перетаскивания: обычные 120 мс дают видимые рывки.</summary>
+    private const int DragPollMs = 15;
+
+    /// <summary>Такт в покое. Реже — и нажатие на кнопку начинает «залипать».</summary>
+    private const int IdlePollMs = 120;
+
     /// <summary>
     /// Перетаскивание за шапку. Как и кнопки, отслеживается опросом координат:
     /// окно создано без активации, и события мыши до него не доходят.
@@ -333,25 +347,64 @@ public partial class SubtitleOverlay : Window
     {
         if (_dragStart is null)
         {
-            if (!_mouseWasDown && HitTest(HeaderRow, cursor) && !HitTest(CollapseButton, cursor))
-            {
-                _dragStart = new System.Drawing.Point(cursor.X, cursor.Y);
-                _windowAtDragStart = new Point(Left, Top);
-            }
+            if (_mouseWasDown) return;
 
+            var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+            var local = new Point(cursor.X / scale - Left, cursor.Y / scale - Top);
+
+            // Тянуть можно за что угодно, кроме кнопок. Раньше держались только за
+            // шапку, а это полоска в полтора десятка пикселей: попасть в неё с первого
+            // раза не выходило, приходилось нащупывать.
+            if (local.X < 0 || local.Y < 0 || local.X > Width || local.Y > ActualHeight) return;
+            if (Probe(local) is not null) return;
+
+            _dragStart = new System.Drawing.Point(cursor.X, cursor.Y);
+            _windowAtDragStart = new Point(Left, Top);
             return;
         }
 
+        MoveWithCursor(cursor.X, cursor.Y);
+    }
+
+    /// <summary>
+    /// Двигает панель за курсором. Позиция считается от начала захвата, а не от
+    /// предыдущего шага: повторный вызов из другого источника ничего не сдвинет дважды.
+    /// </summary>
+    private void MoveWithCursor(int screenX, int screenY)
+    {
+        if (_dragStart is not { } start) return;
+
         var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        var dx = (cursor.X - _dragStart.Value.X) / scale;
-        var dy = (cursor.Y - _dragStart.Value.Y) / scale;
+        var dx = (screenX - start.X) / scale;
+        var dy = (screenY - start.Y) / scale;
 
         if (!_dragging && Math.Abs(dx) < DragThreshold && Math.Abs(dy) < DragThreshold) return;
 
-        _dragging = true;
+        if (!_dragging)
+        {
+            _dragging = true;
+
+            // На такте опроса в 120 мс панель дёргалась рывками — восемь положений
+            // в секунду видно глазом. На время перетаскивания частим.
+            _timer.Interval = TimeSpan.FromMilliseconds(DragPollMs);
+        }
+
         _placed = true;
         Left = _windowAtDragStart.X + dx;
         Top = _windowAtDragStart.Y + dy;
+    }
+
+    /// <summary>
+    /// Движение мыши до окна доходит, в отличие от нажатий: WS_EX_NOACTIVATE глотает
+    /// кнопки, но не перемещения. Значит саму проводку можно вести на живых событиях,
+    /// а не ждать следующего такта опроса.
+    /// </summary>
+    private void OnMouseMoved(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_dragStart is null) return;
+        if (!GetCursorPos(out var cursor)) return;
+
+        MoveWithCursor(cursor.X, cursor.Y);
     }
 
     /// <summary>
