@@ -64,7 +64,14 @@ public sealed class SpeakerDiarizer
         if (!segments.Any(s => s.Source is AudioChannel.Application or AudioChannel.System))
             return 0;
 
-        var voices = await Task.Run(() => Diarize(audioPath, ct), ct).ConfigureAwait(false);
+        // Размечать тишину незачем: на разреженной встрече речь занимает шестую часть
+        // записи, а движок идёт примерно вполовину реального времени. Куски речи берём
+        // из стенограммы — VAD уже нашёл их при записи.
+        var speech = segments
+            .Where(s => s.Source is AudioChannel.Application or AudioChannel.System)
+            .Select(s => (s.StartMs, s.EndMs));
+
+        var voices = await Task.Run(() => Diarize(audioPath, speech, ct), ct).ConfigureAwait(false);
         if (voices.Count == 0) return 0;
 
         // Кластеризация всё равно дробит людей: один и тот же человек попадает
@@ -380,7 +387,14 @@ public sealed class SpeakerDiarizer
         return names;
     }
 
-    private IReadOnlyList<VoiceSegment> Diarize(string audioPath, CancellationToken ct)
+    /// <summary>
+    /// Пропускать ли тишину. Выключается для сравнения разметки: обрезка ускоряет
+    /// разбор в разы, но меняет результат, и мерить это надо на одном и том же движке.
+    /// </summary>
+    public static bool SkipSilence { get; set; } = true;
+
+    private IReadOnlyList<VoiceSegment> Diarize(
+        string audioPath, IEnumerable<(long StartMs, long EndMs)> speech, CancellationToken ct)
     {
         var manager = new ModelManager(_modelsRoot);
 
@@ -409,17 +423,63 @@ public sealed class SpeakerDiarizer
 
         using var diarizer = new OfflineSpeakerDiarization(config);
 
-        var samples = ReadMonoResampled(audioPath, diarizer.SampleRate);
+        var rate = diarizer.SampleRate;
+        var samples = ReadMonoResampled(audioPath, rate);
         ct.ThrowIfCancellationRequested();
 
-        // Движок принимает массив целиком, поэтому здесь копия неизбежна. Путь
-        // именования читает ту же дорожку и обходится уже без неё.
-        var result = diarizer.Process(samples.ToArray());
+        var totalMs = (long)(samples.Length / (double)rate * 1000);
+        var map = SkipSilence ? SpeechMap.Build(speech, totalMs) : null;
 
-        return result
-            .Select(s => new VoiceSegment((long)(s.Start * 1000), (long)(s.End * 1000), s.Speaker))
+        if (map is null || !map.WorthTrimming(totalMs))
+        {
+            // Движок принимает массив целиком, поэтому здесь копия неизбежна. Путь
+            // именования читает ту же дорожку и обходится уже без неё.
+            var whole = diarizer.Process(samples.ToArray());
+
+            return whole
+                .Select(s => new VoiceSegment(
+                    (long)(s.Start * 1000), (long)(s.End * 1000), s.Speaker))
+                .OrderBy(s => s.StartMs)
+                .ToList();
+        }
+
+        _log.LogInformation(
+            "Разметка по речи: {Speech} из {Total} мин ({Percent}%), кусков {Pieces}",
+            map.MappedDurationMs / 60000, totalMs / 60000,
+            map.MappedDurationMs * 100 / Math.Max(totalMs, 1), map.Pieces.Count);
+
+        var glued = Glue(samples.Span, map, rate);
+        ct.ThrowIfCancellationRequested();
+
+        // Ответы приходят во времени склейки. Отрезок может лечь на шов — тогда он
+        // распадается на несколько настоящих: в промежутке была тишина, а не речь.
+        return diarizer.Process(glued)
+            .SelectMany(s => map
+                .ToSource((long)(s.Start * 1000), (long)(s.End * 1000))
+                .Select(r => new VoiceSegment(r.StartMs, r.EndMs, s.Speaker)))
             .OrderBy(s => s.StartMs)
             .ToList();
+    }
+
+    /// <summary>Склеивает куски речи в одну дорожку в порядке карты.</summary>
+    private static float[] Glue(ReadOnlySpan<float> samples, SpeechMap map, int rate)
+    {
+        var glued = new float[(int)(map.MappedDurationMs * rate / 1000) + rate];
+        var written = 0;
+
+        foreach (var piece in map.Pieces)
+        {
+            var from = (int)(piece.SourceStartMs * rate / 1000);
+            if (from >= samples.Length) continue;
+
+            var length = Math.Min((int)(piece.DurationMs * rate / 1000), samples.Length - from);
+            if (length <= 0) continue;
+
+            samples.Slice(from, length).CopyTo(glued.AsSpan(written));
+            written += length;
+        }
+
+        return written == glued.Length ? glued : glued.AsSpan(0, written).ToArray();
     }
 
     /// <summary>
