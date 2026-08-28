@@ -52,7 +52,20 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
     /// </summary>
     private long _lastAutoOffsetMs = -1;
     private bool _paused;
-    private bool _targetLostReported;
+    /// <summary>
+    /// Про пропажу окна говорим один раз за встречу. Флаг целочисленный и меняется
+    /// через Interlocked не для красоты: колбэк таймера живёт в пуле потоков, и на
+    /// закрытии браузера предупреждение выскочило дважды.
+    /// </summary>
+    private int _targetLostReported;
+
+    /// <summary>
+    /// Сколько проверок подряд окно должно отсутствовать. Одной мало: приложения
+    /// на секунду прячут окно при пересоздании или смене режима, и это не закрытие.
+    /// </summary>
+    private const int GoneChecksToConfirm = 2;
+
+    private int _goneChecks;
     private bool _targetMinimized;
     private readonly MinimizeWatcher _minimizeWatcher = new(MinimizeWarnCooldown);
 
@@ -180,7 +193,8 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
     {
         _context = context;
         _paused = false;
-        _targetLostReported = false;
+        _targetLostReported = 0;
+        _goneChecks = 0;
         _lastAutoOffsetMs = -1;
         _lastHash = 0;
         _targetMinimized = false;
@@ -301,12 +315,7 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
         {
             // За окном следим всегда, даже когда автоснимки выключены: закрытое окно
             // встречи — повод спросить человека, а не молча продолжать запись.
-            if (!WindowEnumerator.IsAlive(_targetWindow))
-            {
-                if (!_targetLostReported) TargetClosed?.Invoke();
-                NotifyTargetProblem("окно закрыто");
-                return;
-            }
+            if (CheckTargetGone()) return;
 
             UpdateMinimizedState(Interop.Win32.IsIconic(_targetWindow));
 
@@ -456,14 +465,51 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
 
     private string _lastOcrKey = string.Empty;
 
-    private void NotifyTargetProblem(string reason)
+    /// <summary>
+    /// Отмечает пропажу окна в шкале встречи. Возвращает true только тому, кто сообщил
+    /// первым: говорить человеку об одном и том же дважды не нужно.
+    /// </summary>
+    private bool NotifyTargetProblem(string reason)
     {
-        if (_targetLostReported || _context is null) return;
-        _targetLostReported = true;
+        if (_context is null) return false;
+        if (Interlocked.Exchange(ref _targetLostReported, 1) == 1) return false;
 
         _context.Events.Emit(_context.Clock, EventTypes.TargetLost, EventSeverity.Warning,
             new Dictionary<string, string> { ["reason"] = reason });
         _log.LogWarning("Целевое окно недоступно: {Reason}", reason);
+        return true;
+    }
+
+    /// <summary>
+    /// Окно встречи пропало. Возвращает true, если дальше делать нечего.
+    ///
+    /// Пропасть можно двумя способами, и это выяснилось не сразу. Браузер окно
+    /// уничтожает — тогда его больше нет вовсе. А Teams при закрытии прячется в трей:
+    /// окно живо, просто не показано, и проверка «существует ли» его пропускала —
+    /// человек так и не узнавал, что встреча кончилась, а запись идёт.
+    ///
+    /// Свёрнутое окно под это не подпадает: система считает его показанным, и отличает
+    /// его отдельный признак.
+    /// </summary>
+    private bool CheckTargetGone()
+    {
+        var gone = !Interop.Win32.IsWindow(_targetWindow)
+            || !Interop.Win32.IsWindowVisible(_targetWindow);
+
+        if (!gone)
+        {
+            _goneChecks = 0;
+            return false;
+        }
+
+        // Одной проверки мало: приложения на секунду прячут окно при пересоздании,
+        // и спрашивать «остановить запись?» на каждое такое мигание нельзя.
+        if (++_goneChecks < GoneChecksToConfirm) return true;
+
+        // Спрашиваем только того, кто застолбил сообщение: иначе два такта успевали
+        // проскочить проверку одновременно, и предупреждение выскакивало дважды.
+        if (NotifyTargetProblem("окно закрыто или скрыто")) TargetClosed?.Invoke();
+        return true;
     }
 
     /// <summary>Смена целевого окна во время встречи (после «Выбрать другое окно»).</summary>
@@ -471,7 +517,8 @@ public sealed class CaptureEngine : ISessionParticipant, ICommandHandler, IDispo
     {
         _targetWindow = handle;
         _applicationName = applicationName;
-        _targetLostReported = false;
+        _targetLostReported = 0;
+        _goneChecks = 0;
         _lastHash = 0;
 
         _context?.Events.Emit(_context.Clock, EventTypes.TargetRestored,

@@ -270,7 +270,7 @@ public partial class SubtitleOverlay : Window
         // Панель тащили, а не нажимали: место запомнили, действие не выполняем.
         if (wasDragging)
         {
-            PositionChanged?.Invoke(new Point(Left, Top));
+            PositionChanged?.Invoke(_lastCommanded);
             return;
         }
 
@@ -390,8 +390,48 @@ public partial class SubtitleOverlay : Window
         }
 
         _placed = true;
-        Left = _windowAtDragStart.X + dx;
-        Top = _windowAtDragStart.Y + dy;
+        _lastCommanded = new Point(_windowAtDragStart.X + dx, _windowAtDragStart.Y + dy);
+        MoveTo(_lastCommanded.X, _lastCommanded.Y);
+    }
+
+    /// <summary>
+    /// Куда панель отправили последним движением. Системе перемещение отдаётся без
+    /// ожидания, и свойства окна успевают отстать — запоминать место надо по команде,
+    /// а не по тому, что окно уже успело о себе рассказать.
+    /// </summary>
+    private Point _lastCommanded;
+
+    private const int SWP_NOSIZE = 0x0001;
+    private const int SWP_NOZORDER = 0x0004;
+    private const int SWP_NOACTIVATE = 0x0010;
+    private const int SWP_ASYNCWINDOWPOS = 0x4000;
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(
+        IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, int flags);
+
+    /// <summary>
+    /// Ставит панель на место одним движением.
+    ///
+    /// Через <c>Left</c> и <c>Top</c> получалось два: каждое свойство двигает окно
+    /// отдельно, а окно у нас слоёное (прозрачный фон, скруглённые углы) — система
+    /// на каждое перемещение пересобирает слой целиком. На быстром ведении это давало
+    /// заметное подрагивание.
+    /// </summary>
+    private void MoveTo(double left, double top)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            Left = left;
+            Top = top;
+            return;
+        }
+
+        var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        SetWindowPos(hwnd, IntPtr.Zero,
+            (int)Math.Round(left * scale), (int)Math.Round(top * scale), 0, 0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
     }
 
     /// <summary>
