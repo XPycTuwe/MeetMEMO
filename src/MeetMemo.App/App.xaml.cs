@@ -1399,6 +1399,33 @@ public partial class App : Application
         }
     }
 
+    /// <summary>Блокнот заметок. Окно одно: второй стикер тому же человеку не нужен.</summary>
+    private NotesWindow? _notes;
+
+    private void OnNotesClick(object sender, RoutedEventArgs e)
+    {
+        // Меню трея должно успеть закрыться, иначе окно откроется под ним.
+        DeferToUi(() =>
+        {
+            if (_notes is not null)
+            {
+                _notes.Activate();
+                return;
+            }
+
+            _notes = new NotesWindow(_settings.Notes);
+
+            _notes.LayoutChanged += layout =>
+            {
+                _settings = _settings with { Notes = layout };
+                _ = _settings.SaveAsync();
+            };
+
+            _notes.Closed += (_, _) => _notes = null;
+            _notes.Show();
+        });
+    }
+
     private void OnOpenMeetingsRootClick(object sender, RoutedEventArgs e)
     {
         Directory.CreateDirectory(_settings.MeetingsRoot);

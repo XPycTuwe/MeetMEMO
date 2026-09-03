@@ -21,6 +21,7 @@
                 <MenuItem x:Name="DesktopShotItem" Header="Снимок экрана"
                           Click="OnDesktopShotClick" Visibility="Collapsed" />
                 <Separator />
+                <MenuItem Header="Заметки" Click="OnNotesClick" />
                 <MenuItem Header="Открыть папку встреч" Click="OnOpenMeetingsRootClick" />
                 <Separator />
                 <MenuItem Header="Выход" Click="OnExitClick" />

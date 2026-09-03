@@ -20,6 +20,9 @@ public sealed class MeetingFolder
     public string TranscriptJsonl => Path.Combine(Root, "transcript.jsonl");
     public string TranscriptMd => Path.Combine(Root, "transcript.md");
     public string GlossaryMd => Path.Combine(Root, "glossary.md");
+
+    /// <summary>Заметки человека: что он сам счёл важным до встречи и по её ходу.</summary>
+    public string NotesMd => Path.Combine(Root, "notes.md");
     public string LockFile => Path.Combine(Root, "session.lock");
 
     public string AudioDir => Path.Combine(Root, "audio");

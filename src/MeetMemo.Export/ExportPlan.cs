@@ -45,6 +45,10 @@ public sealed class ExportPlan
     public bool ContainsAudio => Items.Any(i => i.Included && i.Category == ExportCategory.Audio);
 
     /// <summary>Есть ли в пакете слова на разбор — упоминать их в README только тогда.</summary>
+    /// <summary>Человек оставил заметки — упоминать их в README только тогда.</summary>
+    public bool ContainsNotes =>
+        Items.Any(i => i.Included && i.RelativePath == "notes.md");
+
     public bool ContainsGlossaryCandidates =>
         Items.Any(i => i.Included && i.RelativePath == "glossary-candidates.md");
 
@@ -97,6 +101,7 @@ public static class ExportPlanBuilder
         AddFile(folder.TranscriptMd, ExportCategory.Transcript);
         AddFile(folder.GlossaryMd, ExportCategory.Transcript);
         AddFile(Path.Combine(meetingFolderPath, "glossary-candidates.md"), ExportCategory.Transcript);
+        AddFile(folder.NotesMd, ExportCategory.Metadata);
         AddFile(folder.ContextJsonl, ExportCategory.Metadata);
         AddFile(Path.Combine(meetingFolderPath, "transcript.live.jsonl"), ExportCategory.Transcript, false);
 

@@ -138,6 +138,10 @@ public sealed record AppSettings
     [JsonPropertyName("subtitles_collapsed")]
     public bool SubtitlesCollapsed { get; init; }
 
+    /// <summary>Где стоит блокнот заметок, какого он размера и как выглядит.</summary>
+    [JsonPropertyName("notes")]
+    public NotesLayout Notes { get; init; } = new();
+
     public bool IsTracked(string? processName) =>
         processName is not null
         && TrackedApps.Any(a => string.Equals(a, processName, StringComparison.OrdinalIgnoreCase));
@@ -181,4 +185,30 @@ public sealed record AppSettings
 
     public Task SaveAsync(CancellationToken ct = default) =>
         AtomicJsonStore.WriteAsync(SettingsPath, this, JsonSetup.Pretty, ct);
+}
+
+/// <summary>
+/// Где стоит блокнот заметок и как он выглядит. Размер букв и контраст подбирают
+/// под себя один раз — терять этот выбор при каждом запуске незачем.
+/// </summary>
+public sealed record NotesLayout
+{
+    [JsonPropertyName("x")]
+    public double? X { get; init; }
+
+    [JsonPropertyName("y")]
+    public double? Y { get; init; }
+
+    [JsonPropertyName("width")]
+    public double? Width { get; init; }
+
+    [JsonPropertyName("height")]
+    public double? Height { get; init; }
+
+    [JsonPropertyName("font_size")]
+    public double FontSize { get; init; } = 15;
+
+    /// <summary>Номер оформления: тёмное, светлое, предельно контрастное.</summary>
+    [JsonPropertyName("look")]
+    public int Look { get; init; }
 }

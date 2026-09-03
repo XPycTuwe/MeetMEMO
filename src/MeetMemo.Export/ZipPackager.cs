@@ -156,6 +156,12 @@ public sealed class ZipPackager
         await writer.WriteLineAsync("## Что внутри").ConfigureAwait(false);
         await writer.WriteLineAsync().ConfigureAwait(false);
         await writer.WriteLineAsync("- `session.json` — параметры встречи;").ConfigureAwait(false);
+        if (plan.ContainsNotes)
+        {
+            await writer.WriteLineAsync(
+                "- `notes.md` — заметки участника: что он сам счёл важным;")
+                .ConfigureAwait(false);
+        }
         await writer.WriteLineAsync("- `timeline.jsonl` — события с таймкодами;").ConfigureAwait(false);
         await writer.WriteLineAsync("- `transcript.jsonl` / `transcript.md` — стенограмма;").ConfigureAwait(false);
         await writer.WriteLineAsync("- `glossary.md` — словарь терминов встречи;").ConfigureAwait(false);

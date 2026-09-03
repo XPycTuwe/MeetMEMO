@@ -92,5 +92,12 @@ public static class TranscriptRenderer
 /// </summary>
 public static class GlossaryTemplate
 {
-    public static void Ensure(MeetingFolder folder) => new GlossaryStore().WriteToMeeting(folder);
+    public static void Ensure(MeetingFolder folder)
+    {
+        new GlossaryStore().WriteToMeeting(folder);
+
+        // Заодно заметки: человек писал их для себя, но разбирающей модели они говорят
+        // больше стенограммы — там видно, что он сам счёл важным.
+        new NotesStore().WriteToMeeting(folder);
+    }
 }
