@@ -89,6 +89,39 @@
                 </Button.Template>
             </Button>
 
+            <!-- Заметки нужны и до записи — цифры и питч кладут заранее, — поэтому
+                 кнопка видна всегда, в отличие от снимка. Стоит вплотную к значку:
+                 так её место не съезжает, когда снимок появляется и пропадает. -->
+            <Button x:Name="NotesButton" Click="OnNotesClick" Focusable="False"
+                    Margin="0,0,4,0" Padding="0" BorderThickness="0"
+                    Background="Transparent">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="NtBd" Background="#E62E74B5" CornerRadius="3"
+                                Width="18" Height="18">
+                            <!-- Листок с загнутым углом и строчками -->
+                            <Canvas Width="12" Height="12" HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                <Path Fill="White"
+                                      Data="M2,0.5 L7.5,0.5 L10,3 L10,11.5 L2,11.5 Z" />
+                                <Path Fill="#FF2E74B5" Data="M7.5,0.5 L10,3 L7.5,3 Z" />
+                                <Rectangle Canvas.Left="3.5" Canvas.Top="5" Width="5"
+                                           Height="0.9" Fill="#FF2E74B5" />
+                                <Rectangle Canvas.Left="3.5" Canvas.Top="7" Width="5"
+                                           Height="0.9" Fill="#FF2E74B5" />
+                                <Rectangle Canvas.Left="3.5" Canvas.Top="9" Width="3"
+                                           Height="0.9" Fill="#FF2E74B5" />
+                            </Canvas>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="NtBd" Property="Background" Value="#FF1D5A94" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
             <!-- Значок можно таскать по заголовку: у каждого приложения свои кнопки
                  слева от системных, и единого правильного места не существует.
                  Прозрачный фон мышью не ловится — нужен явный Transparent. -->

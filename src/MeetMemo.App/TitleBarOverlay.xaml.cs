@@ -486,6 +486,14 @@ public partial class TitleBarOverlay : Window
         await _controller.SendAsync(new SessionCommand.CaptureWindow());
     }
 
+    /// <summary>
+    /// Нажали «Заметки» в заголовке. Блокнот один на всё приложение, поэтому решение
+    /// показать его или спрятать принимает не панель — она только сообщает о нажатии.
+    /// </summary>
+    public event Action? NotesRequested;
+
+    private void OnNotesClick(object sender, RoutedEventArgs e) => NotesRequested?.Invoke();
+
     private async void OnImportantClick(object sender, RoutedEventArgs e)
     {
         if (_controller is null) return;

@@ -59,7 +59,12 @@ public partial class NotesWindow : Window
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); Save(); };
 
         SourceInitialized += OnSourceInitialized;
-        Closing += (_, _) => { _saveTimer.Stop(); Save(); };
+        Closing += (_, _) => Save();
+
+        // Кнопка в заголовке окна встречи не закрывает блокнот, а прячет — тогда
+        // Closing не срабатывает. Уход фокуса ловит и этот случай, и переключение
+        // на другое приложение посреди набора.
+        Deactivated += (_, _) => Save();
 
         Restore(layout);
 
@@ -149,7 +154,12 @@ public partial class NotesWindow : Window
         _saveTimer.Start();
     }
 
-    private void Save() => _store.Write(Editor.Text);
+    /// <summary>Сохраняет набранное. Вызывается и снаружи — при выходе из приложения.</summary>
+    public void Save()
+    {
+        _saveTimer.Stop();
+        _store.Write(Editor.Text);
+    }
 
     private void OnSmaller(object sender, RoutedEventArgs e) => Resize(-2);
 

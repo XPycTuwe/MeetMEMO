@@ -416,6 +416,7 @@ public partial class App : Application
                 var overlay = new TitleBarOverlay(
                     window.Handle, appName, () => _controller, _settings.OffsetFor(appName));
                 overlay.RecordRequested += OnOverlayRecordRequested;
+                overlay.NotesRequested += ToggleNotes;
                 WireAutoScreenshots(overlay);
                 overlay.Closed += (_, _) => _overlays.Remove(window.Handle);
                 overlay.Show();
@@ -1403,16 +1404,23 @@ public partial class App : Application
     private NotesWindow? _notes;
 
     private void OnNotesClick(object sender, RoutedEventArgs e)
-    {
         // Меню трея должно успеть закрыться, иначе окно откроется под ним.
-        DeferToUi(() =>
-        {
-            if (_notes is not null)
-            {
-                _notes.Activate();
-                return;
-            }
+        => DeferToUi(ToggleNotes);
 
+    /// <summary>
+    /// Показывает блокнот или прячет его. Прячем, а не закрываем: место в тексте
+    /// и полоса прокрутки сохраняются, и вернуться получается туда же, откуда ушёл.
+    /// </summary>
+    private void ToggleNotes()
+    {
+        if (_notes is { IsVisible: true })
+        {
+            _notes.Hide();
+            return;
+        }
+
+        if (_notes is null)
+        {
             _notes = new NotesWindow(_settings.Notes);
 
             _notes.LayoutChanged += layout =>
@@ -1421,9 +1429,12 @@ public partial class App : Application
                 _ = _settings.SaveAsync();
             };
 
+            // Крестик окна закрывает его совсем — тогда заводим заново.
             _notes.Closed += (_, _) => _notes = null;
-            _notes.Show();
-        });
+        }
+
+        _notes.Show();
+        _notes.Activate();
     }
 
     private void OnOpenMeetingsRootClick(object sender, RoutedEventArgs e)
@@ -1520,6 +1531,10 @@ public partial class App : Application
     private async void OnExit(object sender, ExitEventArgs e)
     {
         _overlayScanTimer?.Stop();
+
+        // Блокнот мог остаться спрятанным с недописанной мыслью: выход не повод её терять.
+        _notes?.Save();
+
         CloseSystemOverlay();
         CloseAllOverlays();
 
